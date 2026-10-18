@@ -21,8 +21,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false)
         window.title = "dmucode"
-        window.toolbarStyle = .unified
-        window.toolbar = NSToolbar(identifier: "main")
+        // The title bar shows the terminal theme's background (drawn by the
+        // content underneath) instead of the system's titlebar material.
+        window.titlebarAppearsTransparent = true
+        window.appearance = GhosttyRuntime.shared.theme.appearance
         window.setFrameAutosaveName("DmucodeMainWindow")
         if !window.setFrameUsingName("DmucodeMainWindow") { window.center() }
 
@@ -32,6 +34,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let split = NSSplitViewController()
         let sidebar = NSHostingController(rootView: SidebarView(
             store: store,
+            theme: GhosttyRuntime.shared.theme,
             onNew: { [weak self] in self?.newSession(nil) },
             onRename: { [weak self] in self?.rename($0) },
             onKill: { [weak self] in self?.kill($0) }))
@@ -71,15 +74,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
-        applyTransparency()
+        applyWindowBackground()
     }
 
     /// Like Ghostty's own app: with background-opacity < 1 the window must be
     /// see-through, or the terminal's translucent background is composited
     /// over an opaque window. Blur only takes effect once the window is
     /// visible. (Ghostty also turns this off in native fullscreen; not yet.)
-    private func applyTransparency() {
-        guard let window, GhosttyRuntime.shared.backgroundOpacity < 1 else { return }
+    private func applyWindowBackground() {
+        guard let window else { return }
+        let theme = GhosttyRuntime.shared.theme
+        guard theme.isTranslucent else {
+            window.backgroundColor = theme.background
+            return
+        }
         window.isOpaque = false
         // Not .clear: Ghostty uses this to match Terminal.app's look.
         window.backgroundColor = .white.withAlphaComponent(0.001)
@@ -176,6 +184,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 final class TerminalContainerController: NSViewController {
     private let tmux: Tmux
     private var views: [String: TerminalView] = [:]
+    private let theme = GhosttyRuntime.shared.theme
+    private let titleStrip = NSView()
     private let placeholder = NSTextField(labelWithString: "")
     private let reattachButton = NSButton(title: "Attach", target: nil, action: nil)
     private var shownID: String?
@@ -193,11 +203,15 @@ final class TerminalContainerController: NSViewController {
     override func loadView() {
         let root = NSView()
         root.wantsLayer = true
-        // Under the terminals; must not cover the window when the Ghostty
-        // config makes terminal backgrounds translucent.
-        root.layer?.backgroundColor = GhosttyRuntime.shared.backgroundOpacity < 1
-            ? NSColor.clear.cgColor
-            : NSColor.windowBackgroundColor.cgColor
+        // Under the terminals. With translucent terminals it must stay clear,
+        // or it would add to their background; it gets the theme color only
+        // while no terminal is shown (see showPlaceholder).
+        root.layer?.backgroundColor = theme.isTranslucent ? NSColor.clear.cgColor : theme.background.cgColor
+
+        // The strip under the transparent title bar, above the terminals.
+        titleStrip.wantsLayer = true
+        titleStrip.layer?.backgroundColor = theme.chromeBackground.cgColor
+        root.addSubview(titleStrip)
 
         placeholder.alignment = .center
         placeholder.textColor = .secondaryLabelColor
@@ -257,6 +271,8 @@ final class TerminalContainerController: NSViewController {
     override func viewDidLayout() {
         super.viewDidLayout()
         for terminal in views.values { terminal.frame = terminalFrame }
+        let top = view.safeAreaInsets.top
+        titleStrip.frame = NSRect(x: 0, y: view.bounds.height - top, width: view.bounds.width, height: top)
     }
 
     /// Drops terminals whose session no longer exists.
@@ -305,10 +321,12 @@ final class TerminalContainerController: NSViewController {
         placeholder.stringValue = text
         placeholder.isHidden = false
         reattachButton.isHidden = !reattach
+        if theme.isTranslucent { view.layer?.backgroundColor = theme.chromeBackground.cgColor }
     }
 
     private func hidePlaceholder() {
         placeholder.isHidden = true
         reattachButton.isHidden = true
+        if theme.isTranslucent { view.layer?.backgroundColor = NSColor.clear.cgColor }
     }
 }

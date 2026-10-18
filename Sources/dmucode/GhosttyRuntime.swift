@@ -69,6 +69,26 @@ final class GhosttyRuntime {
         return value
     }
 
+    /// The terminal colors the window chrome should match. Read from the
+    /// resolved config, so the `theme` and the user's own overrides apply.
+    var theme: TerminalTheme {
+        TerminalTheme(
+            background: color("background") ?? .black,
+            foreground: color("foreground") ?? .white,
+            opacity: backgroundOpacity)
+    }
+
+    private func color(_ key: String) -> NSColor? {
+        guard let config else { return nil }
+        var value = ghostty_config_color_s()
+        guard ghostty_config_get(config, &value, key, UInt(key.utf8.count)) else { return nil }
+        return NSColor(
+            srgbRed: CGFloat(value.r) / 255,
+            green: CGFloat(value.g) / 255,
+            blue: CGFloat(value.b) / 255,
+            alpha: 1)
+    }
+
     /// Applies `background-blur` behind a see-through window. libghostty
     /// does nothing when background-opacity is 1 or blur is off.
     func setBackgroundBlur(_ window: NSWindow) {
@@ -215,5 +235,24 @@ final class GhosttyRuntime {
                 }
             }
         }
+    }
+}
+
+struct TerminalTheme {
+    let background: NSColor
+    let foreground: NSColor
+    /// `background-opacity`; below 1 the window is see-through.
+    let opacity: Double
+
+    var isTranslucent: Bool { opacity < 1 }
+
+    /// Chrome (title bar, sidebar) background, as translucent as the terminals.
+    var chromeBackground: NSColor { background.withAlphaComponent(opacity) }
+
+    /// Dark or light system appearance, so text and controls stay readable.
+    var appearance: NSAppearance? {
+        let c = background.usingColorSpace(.sRGB) ?? background
+        let luminance = 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+        return NSAppearance(named: luminance < 0.5 ? .darkAqua : .aqua)
     }
 }
