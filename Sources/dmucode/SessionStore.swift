@@ -12,14 +12,20 @@ final class SessionStore: ObservableObject {
     @Published private(set) var sessions: [TmuxSession] = []
     @Published var selectedID: String? {
         didSet {
+            guard !selectingAutomatically else { return }
+            // A choice by the user (sidebar, shortcut, switching inside tmux)
+            // is the session to come back to next time.
+            selectionIsAutomatic = false
             if let name = sessions.first(where: { $0.id == selectedID })?.name {
-                UserDefaults.standard.set(name, forKey: Self.lastSessionKey)
+                UserDefaults.standard.set(name, forKey: lastSessionKey)
             }
         }
     }
     @Published private(set) var errorMessage: String?
     /// True while updates arrive as control-mode events, false while polling.
     @Published private(set) var isLive = false
+    /// True while tmux-continuum restores sessions after we started the server.
+    @Published private(set) var isRestoring = false
 
     /// A tmux client moved to another session (prefix s, switch-client...):
     /// the client's tty and the new session id.
@@ -31,11 +37,20 @@ final class SessionStore: ObservableObject {
     private var pollTimer: Timer?
     private var cliRefreshing = false
     private var refreshScheduled = false
-    private var loadedOnce = false
+    /// The throwaway session that started the server for a restore. Hidden
+    /// until tmux-resurrect kills it, which marks the restore as done.
+    private var restorePlaceholderID: String?
+
+    /// The current selection was made by fixSelection, not the user, so the
+    /// remembered session may replace it once it appears (e.g. restored).
+    private var selectionIsAutomatic = true
+    private var selectingAutomatically = false
 
     /// Remembered by name: ids change when the tmux server restarts (e.g.
-    /// after tmux-resurrect), names survive.
-    private static let lastSessionKey = "lastSessionName"
+    /// after tmux-resurrect), names survive. Kept per tmux socket.
+    private var lastSessionKey: String {
+        "lastSessionName" + (tmux.socketName.map { "-" + $0 } ?? "")
+    }
 
     /// Notifications after which the session list (names, window counts,
     /// attached clients) may have changed.
@@ -51,7 +66,36 @@ final class SessionStore: ObservableObject {
 
     func start() {
         startPolling()
-        refresh()
+        let tmux = self.tmux
+        queue.async {
+            // After a reboot there is no tmux server. If tmux-resurrect has a
+            // save, start the server so tmux-continuum restores it.
+            var placeholder: String?
+            if tmux.hasResurrectSave, (try? tmux.isServerRunning()) == false {
+                placeholder = try? tmux.startServerForRestore()
+            }
+            DispatchQueue.main.async {
+                if let placeholder { self.beginRestore(placeholder: placeholder) }
+                self.refresh()
+            }
+        }
+    }
+
+    private func beginRestore(placeholder: String) {
+        restorePlaceholderID = placeholder
+        isRestoring = true
+        // If nothing restores (continuum missing, another tmux server
+        // running...), give up and show the session like any other.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            guard let self, self.restorePlaceholderID == placeholder else { return }
+            self.endRestore()
+            self.refresh()
+        }
+    }
+
+    private func endRestore() {
+        restorePlaceholderID = nil
+        isRestoring = false
     }
 
     func refresh(then completion: (() -> Void)? = nil) {
@@ -164,8 +208,15 @@ final class SessionStore: ObservableObject {
 
     private func apply(_ result: Result<[TmuxSession], Error>) {
         switch result {
-        case .success(let sessions):
+        case .success(var sessions):
             errorMessage = nil
+            if let placeholder = restorePlaceholderID {
+                if sessions.contains(where: { $0.id == placeholder }) {
+                    sessions.removeAll { $0.id == placeholder }
+                } else {
+                    endRestore() // tmux-resurrect removed it: restore done
+                }
+            }
             if sessions != self.sessions { self.sessions = sessions }
             fixSelection()
         case .failure(let error):
@@ -174,13 +225,19 @@ final class SessionStore: ObservableObject {
     }
 
     private func fixSelection() {
-        if !loadedOnce {
-            loadedOnce = true
-            let last = UserDefaults.standard.string(forKey: Self.lastSessionKey)
-            selectedID = sessions.first(where: { $0.name == last })?.id ?? sessions.first?.id
+        let remembered = UserDefaults.standard.string(forKey: lastSessionKey)
+        if selectionIsAutomatic, let match = sessions.first(where: { $0.name == remembered }) {
+            if match.id != selectedID { selectAutomatically(match.id) }
             return
         }
         if let id = selectedID, sessions.contains(where: { $0.id == id }) { return }
-        selectedID = sessions.first?.id
+        selectAutomatically(sessions.first?.id)
+    }
+
+    private func selectAutomatically(_ id: String?) {
+        selectingAutomatically = true
+        selectedID = id
+        selectingAutomatically = false
+        selectionIsAutomatic = true
     }
 }

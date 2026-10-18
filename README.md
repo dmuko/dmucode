@@ -39,7 +39,8 @@ Ympäristömuuttujat:
 
 - `DMUCODE_TMUX_SOCKET=nimi` käyttää erillistä tmux-palvelinta (`tmux -L nimi`). Hyödyllinen testaukseen, ettei oikeisiin sessioihin kosketa.
 - `DMUCODE_TMUX=/polku/tmux` ohittaa tmuxin automaattisen etsinnän.
-- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `type`, `ctrl`, `select`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
+- `DMUCODE_RESURRECT_DIR=hakemisto` vaihtaa hakemiston, josta tmux-resurrectin tallennusta etsitään (testejä varten).
+- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `select`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
 
 ## Rakenne
 
@@ -59,6 +60,22 @@ Sovellus pitää yllä yhtä `tmux -C attach-session` -clientia ([TmuxControlCli
 - **Session vaihto tmuxin sisällä:** `%client-session-changed` kertoo clientin tty:n. Jos se on jonkin terminaalin tty (`ghostty_surface_tty_name`), terminaali siirretään uuden session alle ja sivupalkki seuraa (`prefix s`, `switch-client`).
 - **Sivuvaikutus:** control-client näkyy tmuxissa liitettynä clientina. `tmux ls` merkitsee yhden session "(attached)":ksi, ja tmux-konfiguraation `client-attached`-hookit ajetaan. Sivupalkin "attached"-laskuri ei laske control-clienteja.
 
+## Säilyminen rebootin yli
+
+Sessiot elävät tmux-palvelimessa, joten ne säilyvät, kun sovellus käynnistetään uudelleen. Rebootin yli ne säilyvät tmux-resurrectin ja tmux-continuumin avulla. tmux-konfiguraatioon (tpm) lisätään:
+
+```tmux
+set -g @plugin 'tmux-plugins/tmux-resurrect'
+set -g @plugin 'tmux-plugins/tmux-continuum'
+set -g @resurrect-capture-pane-contents 'on'
+set -g @continuum-restore 'on'
+```
+
+- **Tallennus:** continuum tallentaa 15 minuutin välein ja palauttaa viimeisimmän tallennuksen, kun tmux-palvelin käynnistyy.
+- **dmucode käynnistää palautuksen:** jos palvelin ei ole käynnissä ja tallennus löytyy (`~/.local/share/tmux/resurrect/last` tai `~/.tmux/resurrect/last`), dmucode käynnistää palvelimen väliaikaisella sessiolla. Continuum palauttaa sessiot, ja resurrect poistaa väliaikaisen session `0`.
+- **Käyttöliittymä palautuksen aikana:** sovellus näyttää tekstin "Restoring tmux sessions…" eikä näytä väliaikaista sessiota. Palautuksen jälkeen valituksi tulee viimeksi käytetty sessio. Viimeksi käytetty sessio muistetaan nimellä ja erikseen jokaiselle tmux-socketille.
+- **Jos palautusta ei tule 20 sekunnissa:** väliaikainen sessio näytetään tavallisena sessiona.
+
 ## Huomioita
 
 - **Wait-after-command:** libghostty pakottaa `wait-after-command`in päälle, kun surfacelle annetaan komento. Siksi tmux-clientin poistuminen käsitellään `SHOW_CHILD_EXITED`-actionista. Muuten jäljelle jäisi "Press any key" -ruutu.
@@ -66,5 +83,6 @@ Sovellus pitää yllä yhtä `tmux -C attach-session` -clientia ([TmuxControlCli
 
 ## Tunnetut rajoitukset
 
-- **Rebootti:** rebootin yli säilyminen vaatii tmux-resurrectin ja -continuumin. Sovellus ei tee sille mitään erityistä.
+- **Continuumin vartija:** continuum ohittaa sekä palautuksen että automaattitallennuksen, jos se luulee toisen tmux-palvelimen olevan käynnissä. Se laskee prosessit, joiden komentorivi alkaa sanalla `tmux`. dmucode kutsuu tmuxia absoluuttisella polulla, joten sen prosessit eivät näy tässä laskussa, mutta esimerkiksi erillinen `tmux -L` -palvelin estää palautuksen.
+- **Mukautettu tallennushakemisto:** `@resurrect-dir` ei ole tuettu palautuksen käynnistyksessä, koska asetusta ei voi lukea ennen kuin palvelin on käynnissä.
 - **Puuttuvat ominaisuudet:** tabit (tmuxin ikkunat) puuttuvat vielä, samoin `flagsChanged`-modifier-tapahtumat, osoitinmuodot ja asetusikkuna.
