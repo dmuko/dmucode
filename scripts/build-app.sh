@@ -13,6 +13,7 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin" "$app/Contents/MacOS/dmucode"
 cp Resources/Info.plist "$app/Contents/Info.plist"
+cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 cp -R vendor/ghostty/zig-out/share/terminfo "$app/Contents/Resources/terminfo"
 cp -R vendor/ghostty/zig-out/share/ghostty "$app/Contents/Resources/ghostty"
 codesign --force --sign - "$app" >/dev/null
