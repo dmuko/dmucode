@@ -11,6 +11,7 @@ import IOSurface
 ///   ctrl LETTER     synthesize ctrl+LETTER (e.g. tmux prefix: ctrl b)
 ///   select N        select the Nth session in the sidebar
 ///   new NAME        create a session (as the New Session button does)
+///   state NAME      write the sidebar state (live, selection, sessions) to NAME.txt
 enum DebugHooks {
     private static var timer: Timer?
 
@@ -41,6 +42,11 @@ enum DebugHooks {
             if let n = Int(arg), store.sessions.indices.contains(n - 1) {
                 store.selectedID = store.sessions[n - 1].id
             }
+        case "state":
+            var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title)"]
+            lines += store.sessions.map { "\($0.id) \($0.name) windows=\($0.windows) attached=\($0.attachedClients)" }
+            try? (lines.joined(separator: "\n") + "\n").write(
+                to: URL(fileURLWithPath: dir).appendingPathComponent("\(arg).txt"), atomically: true, encoding: .utf8)
         case "new":
             var newID: String?
             store.perform({ tmux in
