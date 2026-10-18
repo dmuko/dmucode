@@ -60,6 +60,22 @@ final class GhosttyRuntime {
         return true
     }
 
+    /// `background-opacity` from the Ghostty config; 1 means opaque.
+    var backgroundOpacity: Double {
+        guard let config else { return 1 }
+        var value: Double = 1
+        let key = "background-opacity"
+        _ = ghostty_config_get(config, &value, key, UInt(key.utf8.count))
+        return value
+    }
+
+    /// Applies `background-blur` behind a see-through window. libghostty
+    /// does nothing when background-opacity is 1 or blur is off.
+    func setBackgroundBlur(_ window: NSWindow) {
+        guard let app else { return }
+        ghostty_set_window_background_blur(app, Unmanaged.passUnretained(window).toOpaque())
+    }
+
     func tick() {
         guard let app else { return }
         ghostty_app_tick(app)
