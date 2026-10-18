@@ -1,0 +1,203 @@
+import AppKit
+import GhosttyKit
+
+/// Owns the process-wide `ghostty_app_t` and answers libghostty's runtime
+/// callbacks. Callbacks that concern one surface arrive with that surface's
+/// userdata, which is its `TerminalView`.
+final class GhosttyRuntime {
+    static let shared = GhosttyRuntime()
+
+    private(set) var app: ghostty_app_t?
+    private var config: ghostty_config_t?
+
+    private init() {}
+
+    /// Loads the user's Ghostty config (~/.config/ghostty/config) so fonts and
+    /// themes match their Ghostty, and creates the app.
+    func start() -> Bool {
+        guard ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS else {
+            return false
+        }
+        guard let config = ghostty_config_new() else { return false }
+        ghostty_config_load_default_files(config)
+        ghostty_config_load_recursive_files(config)
+        ghostty_config_finalize(config)
+        for i in 0..<ghostty_config_diagnostics_count(config) {
+            let diag = ghostty_config_get_diagnostic(config, i)
+            if let message = diag.message {
+                NSLog("ghostty config: %@", String(cString: message))
+            }
+        }
+        self.config = config
+
+        var runtime = ghostty_runtime_config_s(
+            userdata: nil,
+            supports_selection_clipboard: false,
+            wakeup_cb: { _ in
+                // May be called from any thread.
+                DispatchQueue.main.async { GhosttyRuntime.shared.tick() }
+            },
+            action_cb: { _, target, action in
+                GhosttyRuntime.shared.handleAction(target: target, action: action)
+            },
+            read_clipboard_cb: { userdata, location, state, mimes, mimesLen, _ in
+                GhosttyRuntime.readClipboard(userdata, location: location, state: state)
+            },
+            confirm_read_clipboard_cb: { userdata, confirm, state, request in
+                GhosttyRuntime.confirmReadClipboard(userdata, confirm: confirm, state: state, request: request)
+            },
+            write_clipboard_cb: { _, location, content, len, confirm in
+                GhosttyRuntime.writeClipboard(location: location, content: content, len: len, confirm: confirm)
+            },
+            close_surface_cb: { userdata, _ in
+                guard let view = TerminalView.from(userdata) else { return }
+                DispatchQueue.main.async { view.onClose?() }
+            }
+        )
+        guard let app = ghostty_app_new(&runtime, config) else { return false }
+        self.app = app
+        ghostty_app_set_focus(app, NSApp.isActive)
+        return true
+    }
+
+    func tick() {
+        guard let app else { return }
+        ghostty_app_tick(app)
+    }
+
+    func setFocus(_ focused: Bool) {
+        guard let app else { return }
+        ghostty_app_set_focus(app, focused)
+    }
+
+    private func handleAction(target: ghostty_target_s, action: ghostty_action_s) -> Bool {
+        switch action.tag {
+        case GHOSTTY_ACTION_QUIT:
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+            return true
+        case GHOSTTY_ACTION_SHOW_CHILD_EXITED:
+            // libghostty forces wait-after-command for surfaces given a
+            // command, so the tmux client exiting (detach, session killed)
+            // would leave a "Press any key" screen. Close the view instead.
+            guard target.tag == GHOSTTY_TARGET_SURFACE,
+                  let surface = target.target.surface,
+                  let view = TerminalView.from(ghostty_surface_userdata(surface)) else { return false }
+            DispatchQueue.main.async { view.onClose?() }
+            return true
+        case GHOSTTY_ACTION_RING_BELL:
+            DispatchQueue.main.async { NSSound.beep() }
+            return true
+        default:
+            // Everything else (Ghostty tabs, splits, windows, title...) is
+            // either tmux's job here or not needed for the prototype.
+            return false
+        }
+    }
+
+    // MARK: Clipboard
+
+    private static func readClipboard(
+        _ userdata: UnsafeMutableRawPointer?,
+        location: ghostty_clipboard_e,
+        state: UnsafeMutableRawPointer?
+    ) -> ghostty_clipboard_read_result_e {
+        guard let surface = TerminalView.from(userdata)?.surface else {
+            return GHOSTTY_CLIPBOARD_READ_UNSUPPORTED
+        }
+        guard location == GHOSTTY_CLIPBOARD_STANDARD,
+              let text = NSPasteboard.general.string(forType: .string) else {
+            return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE
+        }
+        complete(surface, text: text, state: state, confirmed: false)
+        return GHOSTTY_CLIPBOARD_READ_STARTED
+    }
+
+    /// Ghostty asks for confirmation before unsafe pastes (e.g. multi-line
+    /// text into a shell) and before programs read the clipboard via OSC 52.
+    /// The request stays pending until we complete or deny it, so the
+    /// contents are copied and the prompt is shown after the callback returns.
+    private static func confirmReadClipboard(
+        _ userdata: UnsafeMutableRawPointer?,
+        confirm: UnsafePointer<ghostty_clipboard_confirm_s>?,
+        state: UnsafeMutableRawPointer?,
+        request: ghostty_clipboard_request_e
+    ) {
+        guard let view = TerminalView.from(userdata), let surface = view.surface else { return }
+        guard request == GHOSTTY_CLIPBOARD_REQUEST_PASTE,
+              let confirm = confirm?.pointee,
+              let text = plainText(confirm.contents, count: confirm.contents_len) else {
+            ghostty_surface_deny_clipboard_request(surface, state)
+            return
+        }
+
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Paste potentially unsafe text?"
+            alert.informativeText = String(text.prefix(500))
+            alert.addButton(withTitle: "Paste")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                complete(surface, text: text, state: state, confirmed: true)
+            } else {
+                ghostty_surface_deny_clipboard_request(surface, state)
+            }
+        }
+    }
+
+    private static func writeClipboard(
+        location: ghostty_clipboard_e,
+        content: UnsafePointer<ghostty_clipboard_content_s>?,
+        len: Int,
+        confirm: Bool
+    ) {
+        // Writes that need confirmation come from programs (OSC 52); the
+        // prototype just ignores them.
+        guard location == GHOSTTY_CLIPBOARD_STANDARD, !confirm,
+              let text = plainText(content, count: len) else { return }
+        DispatchQueue.main.async {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+        }
+    }
+
+    private static func plainText(
+        _ contents: UnsafePointer<ghostty_clipboard_content_s>?,
+        count: Int
+    ) -> String? {
+        guard let contents else { return nil }
+        for i in 0..<count {
+            let item = contents[i]
+            guard let mime = item.mime, String(cString: mime) == "text/plain",
+                  let data = item.data else { continue }
+            let bytes = UnsafeRawBufferPointer(start: data, count: item.len)
+            return String(decoding: bytes, as: UTF8.self)
+        }
+        return nil
+    }
+
+    private static func complete(
+        _ surface: ghostty_surface_t,
+        text: String,
+        state: UnsafeMutableRawPointer?,
+        confirmed: Bool
+    ) {
+        // utf8CString is NUL-terminated, so it has storage even for "".
+        let bytes = text.utf8CString
+        "text/plain".withCString { mime in
+            bytes.withUnsafeBufferPointer { buf in
+                var content = ghostty_clipboard_content_s(
+                    mime: mime, data: buf.baseAddress, len: buf.count - 1)
+                withUnsafePointer(to: &content) { contentPtr in
+                    var done = ghostty_clipboard_complete_s(
+                        contents: contentPtr,
+                        contents_len: 1,
+                        available: nil,
+                        available_len: 0,
+                        confirmed: confirmed,
+                        remember: false)
+                    ghostty_surface_complete_clipboard_request(surface, &done, state)
+                }
+            }
+        }
+    }
+}
