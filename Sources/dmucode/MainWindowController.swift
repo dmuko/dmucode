@@ -56,6 +56,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             self.store.selectedID = sessionID
         }
 
+        store.$isRestoring
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.showSelected() }
+            .store(in: &cancellables)
         store.$selectedID
             .removeDuplicates()
             .receive(on: RunLoop.main)
@@ -95,7 +100,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func showSelected() {
-        terminals.show(sessionID: store.selectedID, hasSessions: !store.sessions.isEmpty)
+        let emptyText = store.isRestoring ? "Restoring tmux sessions…"
+            : store.sessions.isEmpty ? "No tmux sessions.\nPress ⌘N to create one."
+            : "Select a session"
+        terminals.show(sessionID: store.selectedID, emptyText: emptyText)
         updateTitle()
     }
 
@@ -229,12 +237,12 @@ final class TerminalContainerController: NSViewController {
         view = root
     }
 
-    func show(sessionID: String?, hasSessions: Bool) {
+    func show(sessionID: String?, emptyText: String) {
         shownID = sessionID
         for (id, view) in views where id != sessionID { view.setVisible(false) }
 
         guard let sessionID else {
-            showPlaceholder(hasSessions ? "Select a session" : "No tmux sessions.\nPress ⌘N to create one.", reattach: false)
+            showPlaceholder(emptyText, reattach: false)
             return
         }
 

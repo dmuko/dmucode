@@ -84,6 +84,37 @@ struct Tmux {
         guard result.status == 0 else { throw TmuxError(description: result.stderr) }
     }
 
+    func isServerRunning() throws -> Bool {
+        let result = try run(["list-sessions"])
+        if result.status == 0 { return true }
+        if result.stderr.contains("no server running") || result.stderr.contains("error connecting") { return false }
+        throw TmuxError(description: result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Whether tmux-resurrect has a save to restore. `@resurrect-dir` can't
+    /// be read without a running server, so this checks resurrect's default
+    /// directories, or DMUCODE_RESURRECT_DIR (used by tests).
+    var hasResurrectSave: Bool {
+        let env = ProcessInfo.processInfo.environment
+        let home = NSHomeDirectory()
+        let dirs = env["DMUCODE_RESURRECT_DIR"].map { [$0] } ?? [
+            home + "/.tmux/resurrect",
+            (env["XDG_DATA_HOME"] ?? home + "/.local/share") + "/tmux/resurrect",
+        ]
+        // `last` links to the newest save; fileExists follows the link.
+        return dirs.contains { FileManager.default.fileExists(atPath: $0 + "/last") }
+    }
+
+    /// Starts the tmux server with a throwaway session and returns its id.
+    /// With `@continuum-restore 'on'`, tmux-continuum restores the last save
+    /// when the server starts, and tmux-resurrect then kills the throwaway
+    /// session (tmux names it "0").
+    func startServerForRestore() throws -> String {
+        let result = try run(["new-session", "-d", "-P", "-F", "#{session_id}"])
+        guard result.status == 0 else { throw TmuxError(description: result.stderr) }
+        return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func killSession(id: String) throws {
         let result = try run(["kill-session", "-t", id])
         guard result.status == 0 else { throw TmuxError(description: result.stderr) }

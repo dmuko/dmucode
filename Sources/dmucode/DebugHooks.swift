@@ -44,7 +44,7 @@ enum DebugHooks {
                 store.selectedID = store.sessions[n - 1].id
             }
         case "state":
-            var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque)"]
+            var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque) restoring=\(store.isRestoring)"]
             lines += store.sessions.map { "\($0.id) \($0.name) windows=\($0.windows) attached=\($0.attachedClients)" }
             try? (lines.joined(separator: "\n") + "\n").write(
                 to: URL(fileURLWithPath: dir).appendingPathComponent("\(arg).txt"), atomically: true, encoding: .utf8)
