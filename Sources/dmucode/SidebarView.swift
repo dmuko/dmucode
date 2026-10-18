@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @ObservedObject var store: SessionStore
+    let theme: TerminalTheme
     var onNew: () -> Void
     var onRename: (TmuxSession) -> Void
     var onKill: (TmuxSession) -> Void
@@ -32,6 +33,7 @@ struct SidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
 
             if let error = store.errorMessage {
                 Text(error)
@@ -52,6 +54,9 @@ struct SidebarView: View {
             }
             .padding(10)
         }
+        // The terminal theme's background instead of the sidebar material,
+        // including under the transparent title bar.
+        .background(Color(nsColor: theme.chromeBackground).ignoresSafeArea())
     }
 }
 
