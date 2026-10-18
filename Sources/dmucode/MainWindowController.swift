@@ -69,6 +69,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     required init?(coder: NSCoder) { fatalError("not supported") }
 
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        applyTransparency()
+    }
+
+    /// Like Ghostty's own app: with background-opacity < 1 the window must be
+    /// see-through, or the terminal's translucent background is composited
+    /// over an opaque window. Blur only takes effect once the window is
+    /// visible. (Ghostty also turns this off in native fullscreen; not yet.)
+    private func applyTransparency() {
+        guard let window, GhosttyRuntime.shared.backgroundOpacity < 1 else { return }
+        window.isOpaque = false
+        // Not .clear: Ghostty uses this to match Terminal.app's look.
+        window.backgroundColor = .white.withAlphaComponent(0.001)
+        GhosttyRuntime.shared.setBackgroundBlur(window)
+    }
+
     private func showSelected() {
         terminals.show(sessionID: store.selectedID, hasSessions: !store.sessions.isEmpty)
         updateTitle()
@@ -176,7 +193,11 @@ final class TerminalContainerController: NSViewController {
     override func loadView() {
         let root = NSView()
         root.wantsLayer = true
-        root.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        // Under the terminals; must not cover the window when the Ghostty
+        // config makes terminal backgrounds translucent.
+        root.layer?.backgroundColor = GhosttyRuntime.shared.backgroundOpacity < 1
+            ? NSColor.clear.cgColor
+            : NSColor.windowBackgroundColor.cgColor
 
         placeholder.alignment = .center
         placeholder.textColor = .secondaryLabelColor

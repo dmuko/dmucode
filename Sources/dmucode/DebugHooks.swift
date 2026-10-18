@@ -12,6 +12,7 @@ import IOSurface
 ///   select N        select the Nth session in the sidebar
 ///   new NAME        create a session (as the New Session button does)
 ///   state NAME      write the sidebar state (live, selection, sessions) to NAME.txt
+///   pixels NAME     write raw RGBA samples of the visible terminal's IOSurface to NAME.txt
 enum DebugHooks {
     private static var timer: Timer?
 
@@ -43,8 +44,27 @@ enum DebugHooks {
                 store.selectedID = store.sessions[n - 1].id
             }
         case "state":
-            var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title)"]
+            var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque)"]
             lines += store.sessions.map { "\($0.id) \($0.name) windows=\($0.windows) attached=\($0.attachedClients)" }
+            try? (lines.joined(separator: "\n") + "\n").write(
+                to: URL(fileURLWithPath: dir).appendingPathComponent("\(arg).txt"), atomically: true, encoding: .utf8)
+        case "pixels":
+            var lines: [String] = []
+            for terminal in allTerminals(in: window.contentView!) where !terminal.isHidden {
+                guard let contents = terminal.layer?.contents,
+                      CFGetTypeID(contents as CFTypeRef) == IOSurfaceGetTypeID() else { continue }
+                let surface = unsafeBitCast(contents as AnyObject, to: IOSurfaceRef.self)
+                IOSurfaceLock(surface, .readOnly, nil)
+                let base = IOSurfaceGetBaseAddress(surface).assumingMemoryBound(to: UInt8.self)
+                let width = IOSurfaceGetWidth(surface), height = IOSurfaceGetHeight(surface)
+                let stride = IOSurfaceGetBytesPerRow(surface)
+                lines.append("size=\(width)x\(height) format=\(IOSurfaceGetPixelFormat(surface))")
+                for (x, y) in [(width / 2, height / 2), (width - 20, height - 20), (40, 40)] {
+                    let p = base + y * stride + x * 4
+                    lines.append("(\(x),\(y)) bytes=\(p[0]) \(p[1]) \(p[2]) \(p[3])")
+                }
+                IOSurfaceUnlock(surface, .readOnly, nil)
+            }
             try? (lines.joined(separator: "\n") + "\n").write(
                 to: URL(fileURLWithPath: dir).appendingPathComponent("\(arg).txt"), atomically: true, encoding: .utf8)
         case "new":
