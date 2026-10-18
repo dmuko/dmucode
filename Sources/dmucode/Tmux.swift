@@ -29,28 +29,45 @@ struct Tmux {
         return Tmux(executable: executable, socketName: socket)
     }
 
-    private var globalArgs: [String] { socketName.map { ["-L", $0] } ?? [] }
+    var globalArgs: [String] { socketName.map { ["-L", $0] } ?? [] }
+
+    // The sidebar query, shared by the CLI and the control-mode client. The
+    // name goes last so it may contain spaces; control clients (our own
+    // `tmux -C`) are not counted as attached.
+    static let listSessionsArgs = ["list-sessions", "-F", "#{session_id} #{session_windows} #{session_name}"]
+    static let listClientsArgs = ["list-clients", "-F", "#{session_id} #{client_control_mode}"]
+
+    static func parseSessions(sessions: [String], clients: [String]) -> [TmuxSession] {
+        var attached: [String: Int] = [:]
+        for line in clients {
+            let fields = line.split(separator: " ")
+            if fields.count == 2, fields[1] == "0" { attached[String(fields[0]), default: 0] += 1 }
+        }
+        return sessions.compactMap { line in
+            let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false)
+            guard fields.count == 3 else { return nil }
+            let id = String(fields[0])
+            return TmuxSession(
+                id: id,
+                name: String(fields[2]),
+                windows: Int(fields[1]) ?? 0,
+                attachedClients: attached[id] ?? 0)
+        }
+    }
 
     func listSessions() throws -> [TmuxSession] {
-        let format = ["#{session_id}", "#{session_name}", "#{session_windows}", "#{session_attached}"]
-            .joined(separator: "\t")
-        let result = try run(["list-sessions", "-F", format])
-        if result.status != 0 {
+        let sessions = try run(Self.listSessionsArgs)
+        if sessions.status != 0 {
             // No server yet simply means no sessions.
-            if result.stderr.contains("no server running") || result.stderr.contains("error connecting") {
+            if sessions.stderr.contains("no server running") || sessions.stderr.contains("error connecting") {
                 return []
             }
-            throw TmuxError(description: result.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
+            throw TmuxError(description: sessions.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        return result.stdout.split(separator: "\n").compactMap { line in
-            let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-            guard fields.count == 4 else { return nil }
-            return TmuxSession(
-                id: fields[0],
-                name: fields[1],
-                windows: Int(fields[2]) ?? 0,
-                attachedClients: Int(fields[3]) ?? 0)
-        }
+        let clients = try run(Self.listClientsArgs)
+        return Self.parseSessions(
+            sessions: sessions.stdout.split(separator: "\n").map(String.init),
+            clients: clients.stdout.split(separator: "\n").map(String.init))
     }
 
     /// Creates a detached session and returns its id.
@@ -83,13 +100,10 @@ struct Tmux {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    private func run(_ args: [String]) throws -> (status: Int32, stdout: String, stderr: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = globalArgs + args
-
-        // A tmux server started from here inherits this environment, so give
-        // it a usable PATH even when the app was launched from Finder.
+    /// The environment for tmux processes started by the app. A tmux server
+    /// started from here inherits it, so give it a usable PATH even when the
+    /// app was launched from Finder.
+    var environment: [String: String] {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
         // tmux configs often set default-terminal to xterm-ghostty, which
@@ -98,7 +112,15 @@ struct Tmux {
            FileManager.default.fileExists(atPath: terminfo) {
             env["TERMINFO"] = terminfo
         }
-        process.environment = env
+        return env
+    }
+
+    private func run(_ args: [String]) throws -> (status: Int32, stdout: String, stderr: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = globalArgs + args
+
+        process.environment = environment
 
         let out = Pipe(), err = Pipe()
         process.standardOutput = out

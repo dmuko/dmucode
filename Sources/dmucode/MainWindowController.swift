@@ -46,6 +46,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         terminals.onTerminalClosed = { [weak self] in self?.store.refresh() }
         terminals.onReattach = { [weak self] in self?.showSelected() }
 
+        // Switching sessions inside tmux (prefix s, switch-client) moves the
+        // terminal to another session; make the sidebar follow it.
+        store.onClientSessionChanged = { [weak self] tty, sessionID in
+            guard let self, self.terminals.clientSessionChanged(tty: tty, to: sessionID) else { return }
+            self.store.selectedID = sessionID
+        }
+
         store.$selectedID
             .removeDuplicates()
             .receive(on: RunLoop.main)
@@ -206,7 +213,9 @@ final class TerminalContainerController: NSViewController {
                 return
             }
             created.frame = terminalFrame
-            created.onClose = { [weak self] in self?.terminalClosed(sessionID) }
+            created.onClose = { [weak self, weak created] in
+                if let created { self?.terminalClosed(created) }
+            }
             view.addSubview(created)
             views[sessionID] = created
             terminal = created
@@ -237,11 +246,29 @@ final class TerminalContainerController: NSViewController {
         }
     }
 
+    /// A tmux client switched sessions. If it belongs to one of our
+    /// terminals, re-key that terminal under the new session (one terminal
+    /// per session). Returns true if it was the visible terminal.
+    func clientSessionChanged(tty: String, to newID: String) -> Bool {
+        guard let (oldID, terminal) = views.first(where: { $0.value.ttyName == tty }),
+              oldID != newID else { return false }
+        views[oldID] = nil
+        if let duplicate = views[newID] {
+            // Freeing its surface detaches that tmux client.
+            duplicate.removeFromSuperview()
+        }
+        views[newID] = terminal
+        guard oldID == shownID else { return false }
+        shownID = newID
+        return true
+    }
+
     /// The tmux client exited: the session was killed or ended, or the user
     /// detached (prefix d). Offer to re-attach; the store refresh removes the
     /// row if the session is gone.
-    private func terminalClosed(_ id: String) {
-        views[id]?.removeFromSuperview()
+    private func terminalClosed(_ terminal: TerminalView) {
+        terminal.removeFromSuperview()
+        guard let id = views.first(where: { $0.value === terminal })?.key else { return }
         views[id] = nil
         if id == shownID {
             showPlaceholder("Detached from this session.", reattach: true)

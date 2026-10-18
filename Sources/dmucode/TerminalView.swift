@@ -47,6 +47,19 @@ final class TerminalView: NSView, NSTextInputClient {
         if let surface { ghostty_surface_free(surface) }
     }
 
+    /// The PTY the surface's process runs on (e.g. /dev/ttys012), which is
+    /// how tmux names this terminal's client. Cached once the process is up.
+    var ttyName: String? {
+        if let cachedTTYName { return cachedTTYName }
+        guard let surface else { return nil }
+        let name = ghostty_surface_tty_name(surface)
+        defer { ghostty_string_free(name) }
+        guard let ptr = name.ptr, name.len > 0 else { return nil }
+        cachedTTYName = String(decoding: UnsafeRawBufferPointer(start: ptr, count: Int(name.len)), as: UTF8.self)
+        return cachedTTYName
+    }
+    private var cachedTTYName: String?
+
     /// Hidden terminals stop rendering but keep their tmux client attached,
     /// so switching back is instant.
     func setVisible(_ visible: Bool) {

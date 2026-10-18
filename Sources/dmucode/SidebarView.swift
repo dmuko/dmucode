@@ -9,7 +9,7 @@ struct SidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             List(selection: $store.selectedID) {
-                Section(store.tmux.socketName.map { "tmux (-L \($0))" } ?? "tmux") {
+                Section {
                     ForEach(Array(store.sessions.enumerated()), id: \.element.id) { index, session in
                         SessionRow(session: session, shortcut: index < 9 ? index + 1 : nil)
                             .tag(session.id)
@@ -18,6 +18,16 @@ struct SidebarView: View {
                                 Divider()
                                 Button("Kill Session…", role: .destructive) { onKill(session) }
                             }
+                    }
+                } header: {
+                    HStack(spacing: 5) {
+                        Text(store.tmux.socketName.map { "tmux (-L \($0))" } ?? "tmux")
+                        Circle()
+                            .fill(store.isLive ? Color.green : Color.secondary)
+                            .frame(width: 5, height: 5)
+                            .help(store.isLive
+                                  ? "Live: updates arrive as tmux control-mode events"
+                                  : "Polling: waiting for a tmux session to connect to")
                     }
                 }
             }
