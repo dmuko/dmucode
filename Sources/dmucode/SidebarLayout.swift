@@ -7,6 +7,10 @@ import Foundation
 /// A flat list: a group header is followed by its sessions, and sessions
 /// before the first header are ungrouped. Sessions that aren't running keep
 /// their place in it; new names are added at the end of the ungrouped ones.
+///
+/// A name like "work/api" files itself: seen for the first time (or renamed
+/// to it), the session goes into group "work", created if needed, and is
+/// shown there as "api". Dragging it elsewhere afterwards is up to the user.
 struct SidebarLayout: Codable, Equatable {
     enum Entry: Codable, Equatable {
         case group(String)
@@ -63,7 +67,8 @@ struct SidebarLayout: Codable, Equatable {
         }
     }
 
-    /// Adds names seen for the first time at the end of the ungrouped ones.
+    /// Adds names seen for the first time: at the end of their prefix's
+    /// group ("work/api" → work), else at the end of the ungrouped ones.
     mutating func include(_ names: [String]) {
         var known = Set(entries.compactMap { entry -> String? in
             if case .session(let name) = entry { return name }
@@ -71,19 +76,49 @@ struct SidebarLayout: Codable, Equatable {
         })
         let new = names.filter { known.insert($0).inserted }
         guard !new.isEmpty else { return }
-        entries.insert(contentsOf: new.map(Entry.session), at: ungroupedEnd)
+        entries.insert(contentsOf: new.filter { Self.prefix(of: $0) == nil }.map(Entry.session), at: ungroupedEnd)
+        for name in new {
+            guard let group = Self.prefix(of: name)?.group else { continue }
+            addGroup(group)
+            entries.insert(.session(name), at: groupRange(group)!.upperBound)
+        }
     }
 
     /// A renamed session keeps its place, replacing any remembered place of
-    /// the new name.
+    /// the new name. A new prefix files it under that group; dropping the
+    /// prefix takes it out of the old prefix's group.
     mutating func renameSession(_ old: String, to new: String) {
         guard old != new else { return }
+        let oldGroup = Self.prefix(of: old)?.group, newGroup = Self.prefix(of: new)?.group
+        let inOldGroup = oldGroup != nil && group(ofSession: old) == oldGroup
         entries.removeAll { $0 == .session(new) }
-        if let index = entries.firstIndex(of: .session(old)) {
-            entries[index] = .session(new)
-        } else {
+        guard let index = entries.firstIndex(of: .session(old)) else {
             include([new])
+            return
         }
+        entries[index] = .session(new)
+        guard newGroup != oldGroup else { return }
+        if let newGroup {
+            addGroup(newGroup)
+            setGroup(newGroup, ofSession: new)
+        } else if inOldGroup {
+            setGroup(nil, ofSession: new)
+        }
+    }
+
+    /// "work/api" → ("work", "api"); nil without a "/" or with nothing
+    /// before or after it. "a/b/c" → ("a", "b/c").
+    static func prefix(of name: String) -> (group: String, rest: String)? {
+        guard let slash = name.firstIndex(of: "/") else { return nil }
+        let group = String(name[..<slash]), rest = String(name[name.index(after: slash)...])
+        return group.isEmpty || rest.isEmpty ? nil : (group, rest)
+    }
+
+    /// What the sidebar shows: the name without its prefix while the session
+    /// is in the group the prefix names, else the whole name.
+    func displayName(ofSession name: String) -> String {
+        guard let (group, rest) = Self.prefix(of: name), self.group(ofSession: name) == group else { return name }
+        return rest
     }
 
     /// A drag in the sidebar as List's onMove reports it: `rows[source]`

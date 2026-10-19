@@ -187,4 +187,66 @@ struct SidebarLayoutTests {
         let decoded = try JSONDecoder().decode(SidebarLayout.self, from: JSONEncoder().encode(layout))
         #expect(decoded == layout)
     }
+
+    // MARK: Prefixed names ("work/api")
+
+    @Test func prefixes() {
+        #expect(SidebarLayout.prefix(of: "work/api")! == ("work", "api"))
+        #expect(SidebarLayout.prefix(of: "a/b/c")! == ("a", "b/c"))
+        #expect(SidebarLayout.prefix(of: "plain") == nil)
+        #expect(SidebarLayout.prefix(of: "/api") == nil)
+        #expect(SidebarLayout.prefix(of: "work/") == nil)
+    }
+
+    @Test func prefixedNameFilesItselfUnderItsGroup() {
+        var layout = sample()
+        layout.include(["work/api", "plain", "work/web", "Agents/claude"])
+        let running = all + sessions("work/api", "plain", "work/web", "Agents/claude")
+        // Ungrouped names still go before the first header; "Agents" exists.
+        #expect(rows(layout, running) == ["a", "b", "c", "plain", "#Agents", "x", "y", "Agents/claude",
+                                          "#work", "work/api", "work/web"])
+        #expect(layout.displayName(ofSession: "work/api") == "api")
+        #expect(layout.displayName(ofSession: "Agents/claude") == "claude")
+        #expect(layout.displayName(ofSession: "plain") == "plain")
+    }
+
+    @Test func movedElsewhereShowsTheWholeNameAndStaysPut() {
+        var layout = SidebarLayout()
+        layout.include(["work/api"])
+        layout.setGroup(nil, ofSession: "work/api")
+        #expect(layout.displayName(ofSession: "work/api") == "work/api")
+        // Known now: seen again (e.g. after a restart) it stays where it was put.
+        layout.include(["work/api"])
+        #expect(layout.group(ofSession: "work/api") == nil)
+    }
+
+    @Test func renameIntoAPrefixFilesTheSession() {
+        var layout = sample()
+        layout.renameSession("a", to: "work/a")
+        #expect(layout.group(ofSession: "work/a") == "work")
+        #expect(layout.displayName(ofSession: "work/a") == "a")
+    }
+
+    @Test func renameOutOfThePrefixLeavesItsGroup() {
+        var layout = SidebarLayout()
+        layout.include(["plain", "work/api"])
+        layout.renameSession("work/api", to: "api")
+        #expect(layout.group(ofSession: "api") == nil)
+        #expect(rows(layout, sessions("plain", "api")) == ["plain", "api", "#work"])
+    }
+
+    @Test func renameWithinThePrefixKeepsThePlace() {
+        var layout = SidebarLayout()
+        layout.include(["work/api", "work/web"])
+        layout.renameSession("work/api", to: "work/backend")
+        #expect(rows(layout, sessions("work/backend", "work/web")) == ["#work", "work/backend", "work/web"])
+    }
+
+    @Test func renameWithoutPrefixKeepsAManualGroup() {
+        // Dragged into Agents by hand; a rename that doesn't touch a prefix
+        // leaves it there.
+        var layout = sample()
+        layout.renameSession("x", to: "claude")
+        #expect(layout.group(ofSession: "claude") == "Agents")
+    }
 }
