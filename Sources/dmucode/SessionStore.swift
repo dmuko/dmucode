@@ -29,6 +29,9 @@ final class SessionStore: ObservableObject {
     }
     /// Sessions in the order they were shown, most recent first (for ⌘K).
     private(set) var recentIDs: [String] = []
+    /// The sidebar's order and groups; `sessions` follows it.
+    @Published private(set) var layout = SidebarLayout()
+    var sidebarRows: [SidebarLayout.Row] { layout.rows(for: sessions) }
     @Published private(set) var errorMessage: String?
     /// True while updates arrive as control-mode events, false while polling.
     @Published private(set) var isLive = false
@@ -63,6 +66,9 @@ final class SessionStore: ObservableObject {
     private var lastSessionKey: String {
         "lastSessionName" + (tmux.socketName.map { "-" + $0 } ?? "")
     }
+    private var layoutKey: String {
+        "sidebarLayout" + (tmux.socketName.map { "-" + $0 } ?? "")
+    }
 
     /// Notifications after which the session list (names, windows, current
     /// window, paths, attached clients) may have changed. Windows of the control
@@ -77,6 +83,10 @@ final class SessionStore: ObservableObject {
 
     init(tmux: Tmux) {
         self.tmux = tmux
+        if let data = UserDefaults.standard.data(forKey: layoutKey),
+           let saved = try? JSONDecoder().decode(SidebarLayout.self, from: data) {
+            layout = saved
+        }
     }
 
     func start() {
@@ -187,6 +197,59 @@ final class SessionStore: ObservableObject {
         perform { tmux in try tmux.selectWindow(sessionID: sessionID, windowID: windowID) }
     }
 
+    // MARK: Sidebar order and groups
+
+    /// A drag in the sidebar (see SidebarLayout.move).
+    func moveSidebarRow(from source: Int, to destination: Int) {
+        let rows = sidebarRows
+        changeLayout { $0.move(rows, from: source, to: destination) }
+    }
+
+    /// False if a group with that name exists.
+    @discardableResult
+    func addGroup(_ name: String, moving sessionID: String? = nil) -> Bool {
+        guard !layout.groups.contains(name) else { return false }
+        changeLayout { layout in
+            layout.addGroup(name)
+            if let session = sessions.first(where: { $0.id == sessionID }) {
+                layout.setGroup(name, ofSession: session.name)
+            }
+        }
+        return true
+    }
+
+    @discardableResult
+    func renameGroup(_ old: String, to new: String) -> Bool {
+        guard !layout.groups.contains(new) else { return false }
+        changeLayout { $0.renameGroup(old, to: new) }
+        return true
+    }
+
+    func removeGroup(_ name: String) {
+        changeLayout { $0.removeGroup(name) }
+    }
+
+    func setGroup(_ group: String?, forSession id: String) {
+        guard let session = sessions.first(where: { $0.id == id }) else { return }
+        changeLayout { $0.setGroup(group, ofSession: session.name) }
+    }
+
+    private func changeLayout(_ change: (inout SidebarLayout) -> Void) {
+        var layout = self.layout
+        change(&layout)
+        guard layout != self.layout else { return }
+        setLayout(layout)
+        let sorted = layout.sorted(sessions)
+        if sorted != sessions { sessions = sorted }
+    }
+
+    private func setLayout(_ layout: SidebarLayout) {
+        self.layout = layout
+        if let data = try? JSONEncoder().encode(layout) {
+            UserDefaults.standard.set(data, forKey: layoutKey)
+        }
+    }
+
     // MARK: Command bar
 
     /// Runs a command-bar line as the session's active pane, then refreshes.
@@ -245,6 +308,20 @@ final class SessionStore: ObservableObject {
         if name == "%client-session-changed", args.count >= 2 {
             onClientSessionChanged?(args[0], args[1])
         }
+        // The session keeps its sidebar place under the new name. Only from
+        // the event: ids are reused after a server restart, so a changed
+        // name for an id isn't proof of a rename. The name changes here too,
+        // or the row would jump to the end until the refresh.
+        if name == "%session-renamed", args.count >= 2,
+           let index = sessions.firstIndex(where: { $0.id == args[0] }) {
+            let old = sessions[index]
+            let newName = args.dropFirst().joined(separator: " ")
+            var layout = self.layout
+            layout.renameSession(old.name, to: newName)
+            setLayout(layout)
+            sessions[index] = TmuxSession(id: old.id, name: newName, windows: old.windows,
+                                          attachedClients: old.attachedClients)
+        }
         if Self.listEvents.contains(name) {
             scheduleRefresh()
         }
@@ -285,6 +362,10 @@ final class SessionStore: ObservableObject {
                     endRestore() // tmux-resurrect removed it: restore done
                 }
             }
+            var layout = self.layout
+            layout.include(sessions.map(\.name))
+            if layout != self.layout { setLayout(layout) }
+            sessions = layout.sorted(sessions)
             if sessions != self.sessions { self.sessions = sessions }
             let ids = Set(sessions.map(\.id))
             if alerts.keys.contains(where: { !ids.contains($0) }) { alerts = alerts.filter { ids.contains($0.key) } }
