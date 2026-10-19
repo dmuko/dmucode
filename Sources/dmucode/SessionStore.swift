@@ -214,6 +214,7 @@ final class SessionStore: ObservableObject {
         do {
             client = try TmuxControlClient(tmux: tmux, sessionID: first.id)
         } catch {
+            TmuxControlClient.log.error("tmux -C failed to start: \(String(describing: error), privacy: .public)")
             errorMessage = "tmux control mode: \(error)"
             return
         }

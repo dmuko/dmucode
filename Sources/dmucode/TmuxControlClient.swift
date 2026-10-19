@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// A tmux control-mode client (`tmux -C attach-session`) used for
 /// notifications and queries, never for pane output.
@@ -7,23 +8,39 @@ import Foundation
 /// `%begin <time> <number> <flags>` … `%end|%error <time> <number> <flags>`,
 /// where flags is 1 for commands this client sent. Lines outside a block are
 /// notifications such as `%sessions-changed`.
+///
+/// Connection events go to the unified log (subsystem dev.dmucode.app,
+/// category control), notifications and commands at debug level.
 final class TmuxControlClient {
     /// A notification's name (e.g. "%sessions-changed") and arguments. Main thread.
     var onNotification: ((String, [String]) -> Void)?
-    /// The connection ended: tmux server exited, last session killed... Main thread.
+    /// The connection ended: tmux server exited, last session killed, or no
+    /// reply came (see `checkHeartbeat`). Main thread.
     var onExit: (() -> Void)?
+
+    static let log = Logger(subsystem: "dev.dmucode.app", category: "control")
+
+    /// A stalled connection never closes, so exit and EOF can't reveal it; a
+    /// command without a reply can. Every interval, give up if the oldest
+    /// reply is overdue, and otherwise send a no-op if nothing is pending.
+    /// A stall is therefore noticed 10-20 s after it starts.
+    private static let heartbeatInterval: TimeInterval = 10
+    private static let replyTimeout: Duration = .seconds(5)
 
     private let process = Process()
     private let input = Pipe()
     private let output = Pipe()
+    private var heartbeat: DispatchSourceTimer?
 
     // Only touched from the output handle's reader queue.
     private var buffer = Data()
     private var block: (number: Substring, ours: Bool, lines: [String])?
 
-    // Replies arrive in the order commands were sent.
+    // Replies arrive in the order commands were sent. SuspendingClock, like
+    // the heartbeat timer, stands still while the Mac sleeps, so a command
+    // sent just before sleep isn't overdue on wake.
     private let lock = NSLock()
-    private var pending: [(Result<[String], TmuxError>) -> Void] = []
+    private var pending: [(sent: SuspendingClock.Instant, reply: (Result<[String], TmuxError>) -> Void)] = []
     private var exited = false
 
     init(tmux: Tmux, sessionID: String) throws {
@@ -33,7 +50,11 @@ final class TmuxControlClient {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
-        process.terminationHandler = { [weak self] _ in self?.finish() }
+        process.terminationHandler = { [weak self] process in
+            let how = process.terminationReason == .uncaughtSignal ? "signal" : "status"
+            Self.log.notice("tmux -C (pid \(process.processIdentifier)) exited, \(how, privacy: .public) \(process.terminationStatus)")
+            self?.finish()
+        }
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             if data.isEmpty {
@@ -43,6 +64,7 @@ final class TmuxControlClient {
             }
         }
         try process.run()
+        Self.log.notice("tmux -C (pid \(self.process.processIdentifier)) attached to session \(sessionID, privacy: .public)")
 
         // no-output: pane output of the attached session would otherwise
         // stream here. ignore-size: stay out of window sizing.
@@ -58,9 +80,16 @@ final class TmuxControlClient {
         // every session.
         send(["refresh-client", "-B",
               "windows::#{S:#{W:#{window_id}=#{window_bell_flag}#{window_activity_flag}#{pane_current_path};}}"])
+
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "dmucode.tmux-control.heartbeat"))
+        timer.schedule(deadline: .now() + Self.heartbeatInterval, repeating: Self.heartbeatInterval)
+        timer.setEventHandler { [weak self] in self?.checkHeartbeat() }
+        timer.resume()
+        heartbeat = timer
     }
 
     deinit {
+        heartbeat?.cancel()
         output.fileHandleForReading.readabilityHandler = nil
         close()
     }
@@ -73,12 +102,13 @@ final class TmuxControlClient {
     /// Sends one command; `reply` receives its output lines on the main thread.
     func send(_ args: [String], reply: ((Result<[String], TmuxError>) -> Void)? = nil) {
         let line = args.map(Self.quote).joined(separator: " ") + "\n"
+        Self.log.debug("> \(String(line.dropLast()), privacy: .public)")
         lock.lock()
         defer { lock.unlock() }
         do {
             guard !exited else { throw TmuxError(description: "tmux control client has exited") }
             try input.fileHandleForWriting.write(contentsOf: Data(line.utf8))
-            pending.append(reply ?? { _ in })
+            pending.append((sent: .now, reply: reply ?? { _ in }))
         } catch {
             let failure = TmuxError(description: "\(error)")
             DispatchQueue.main.async { reply?(.failure(failure)) }
@@ -142,6 +172,7 @@ final class TmuxControlClient {
             // Only possible before no-output takes effect.
             return
         default:
+            Self.log.debug("< \(line, privacy: .public)")
             let args = fields.dropFirst().map(String.init)
             DispatchQueue.main.async { [weak self] in
                 self?.onNotification?(String(name), args)
@@ -152,20 +183,45 @@ final class TmuxControlClient {
     private func popPending() -> ((Result<[String], TmuxError>) -> Void)? {
         lock.lock()
         defer { lock.unlock() }
-        return pending.isEmpty ? nil : pending.removeFirst()
+        return pending.isEmpty ? nil : pending.removeFirst().reply
     }
 
-    private func finish() {
+    // MARK: Heartbeat
+
+    private func checkHeartbeat() {
         lock.lock()
-        exited = true
-        let replies = pending
-        pending.removeAll()
+        let oldest = exited ? nil : pending.first?.sent
+        let idle = !exited && pending.isEmpty
         lock.unlock()
 
+        if let oldest, SuspendingClock.now - oldest > Self.replyTimeout {
+            let pid = process.processIdentifier
+            let waited = SuspendingClock.now - oldest
+            Self.log.error("tmux -C (pid \(pid)): no reply for \(waited, privacy: .public), reconnecting")
+            // SIGKILL: a stalled client may never get to handle SIGTERM.
+            kill(pid, SIGKILL)
+            finish()
+        } else if idle {
+            send(["display-message", "-p", "ok"])
+        }
+    }
+
+    /// Runs once, whichever comes first: exit, or a stall.
+    private func finish() {
+        lock.lock()
+        guard !exited else { lock.unlock(); return }
+        exited = true
+        let replies = pending.map(\.reply)
+        pending.removeAll()
+        lock.unlock()
+        heartbeat?.cancel()
+
         DispatchQueue.main.async { [weak self] in
+            // onExit first: the store then ignores the failed replies
+            // instead of showing "has exited" until polling catches up.
+            self?.onExit?()
             let failure = TmuxError(description: "tmux control client has exited")
             replies.forEach { $0(.failure(failure)) }
-            self?.onExit?()
         }
     }
 
