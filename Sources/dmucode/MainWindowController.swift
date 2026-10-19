@@ -18,11 +18,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         self.store = store
         self.switcher = SessionSwitcherModel(store: store)
         let theme = GhosttyRuntime.shared.theme
+        let git = self.git, commandBar = self.commandBar, switcher = self.switcher
         // The real actions need self; set below.
-        let tabBar = NSHostingView(rootView: TabBarView(
-            store: store, git: git, theme: theme, onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }))
-        let overlay = NSHostingView(rootView: PaletteOverlay(
-            commandBar: commandBar, switcher: switcher, store: store, theme: theme))
+        let tabBar = NSHostingView(rootView: Themed { TabBarView(
+            store: store, git: git, theme: $0, onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }) })
+        let overlay = NSHostingView(rootView: Themed {
+            PaletteOverlay(commandBar: commandBar, switcher: switcher, store: store, theme: $0) })
         self.terminals = TerminalContainerController(tmux: store.tmux, tabBar: tabBar, overlay: overlay)
 
         let window = NSWindow(
@@ -40,24 +41,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
-        tabBar.rootView = TabBarView(
+        tabBar.rootView = Themed { [weak self] theme in TabBarView(
             store: store,
             git: git,
             theme: theme,
-            onSelect: { [weak self] in self?.selectWindow($0) },
-            onNew: { [weak self] in self?.newWindow() },
-            onRename: { [weak self] in self?.renameWindow($0) },
-            onClose: { [weak self] in self?.closeWindow($0) })
+            onSelect: { self?.selectWindow($0) },
+            onNew: { self?.newWindow() },
+            onRename: { self?.renameWindow($0) },
+            onClose: { self?.closeWindow($0) }) }
 
         let split = NSSplitViewController()
-        let sidebar = NSHostingController(rootView: SidebarView(
+        let sidebar = NSHostingController(rootView: Themed { [weak self] theme in SidebarView(
             store: store,
             theme: theme,
-            onNew: { [weak self] in self?.newSession(nil) },
-            onRename: { [weak self] in self?.rename($0) },
-            onKill: { [weak self] in self?.kill($0) },
-            onNewGroup: { [weak self] in self?.newGroup(moving: $0) },
-            onRenameGroup: { [weak self] in self?.renameGroup($0) }))
+            onNew: { self?.newSession(nil) },
+            onRename: { self?.rename($0) },
+            onKill: { self?.kill($0) },
+            onNewGroup: { self?.newGroup(moving: $0) },
+            onRenameGroup: { self?.renameGroup($0) }) })
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 360
@@ -129,23 +130,35 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 self?.updateTitle()
             }
             .store(in: &cancellables)
+        // A reloaded Ghostty config: the terminals update themselves, the
+        // SwiftUI chrome through Themed, the AppKit parts here.
+        GhosttyRuntime.shared.$theme
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in self?.applyTheme($0) }
+            .store(in: &cancellables)
+        GhosttyRuntime.shared.$configErrors
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in self?.showConfigErrors($0) }
+            .store(in: &cancellables)
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
-        applyWindowBackground()
+        applyWindowBackground(GhosttyRuntime.shared.theme)
+        showConfigErrors(GhosttyRuntime.shared.configErrors)
     }
 
     /// Like Ghostty's own app: with background-opacity < 1 the window must be
     /// see-through, or the terminal's translucent background is composited
     /// over an opaque window. Blur only takes effect once the window is
     /// visible. (Ghostty also turns this off in native fullscreen; not yet.)
-    private func applyWindowBackground() {
+    private func applyWindowBackground(_ theme: TerminalTheme) {
         guard let window else { return }
-        let theme = GhosttyRuntime.shared.theme
         guard theme.isTranslucent else {
+            window.isOpaque = true
             window.backgroundColor = theme.background
             return
         }
@@ -153,6 +166,52 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // Not .clear: Ghostty uses this to match Terminal.app's look.
         window.backgroundColor = .white.withAlphaComponent(0.001)
         GhosttyRuntime.shared.setBackgroundBlur(window)
+    }
+
+    private func applyTheme(_ theme: TerminalTheme) {
+        window?.appearance = theme.appearance
+        applyWindowBackground(theme)
+        terminals.applyTheme(theme)
+    }
+
+    // MARK: Ghostty config
+
+    @objc func reloadGhosttyConfig(_ sender: Any?) {
+        GhosttyRuntime.shared.reloadConfig()
+    }
+
+    /// The errors last shown, so saving the same broken config again (or
+    /// reloading) doesn't repeat the sheet.
+    private var shownConfigErrors: [String] = []
+
+    /// libghostty skips bad lines and applies the rest, like Ghostty; this
+    /// says which were skipped.
+    private func showConfigErrors(_ errors: [String]) {
+        guard !errors.isEmpty else {
+            shownConfigErrors = []
+            return
+        }
+        guard errors != shownConfigErrors, let window, window.isVisible, window.attachedSheet == nil else { return }
+        shownConfigErrors = errors
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "The Ghostty config has errors"
+        alert.informativeText = errors.prefix(10).joined(separator: "\n")
+            + (errors.count > 10 ? "\n…" : "")
+            + "\n\nThose lines were skipped; the rest of the config is in effect."
+        alert.beginSheetModal(for: window)
+    }
+
+    var themeState: String {
+        let theme = GhosttyRuntime.shared.theme
+        func hex(_ color: NSColor) -> String {
+            let c = color.usingColorSpace(.sRGB) ?? color
+            return String(format: "#%02x%02x%02x", Int(round(c.redComponent * 255)),
+                          Int(round(c.greenComponent * 255)), Int(round(c.blueComponent * 255)))
+        }
+        return "theme=\(hex(theme.background))/\(hex(theme.foreground)) opacity=\(theme.opacity)"
+            + " appearance=\(window?.appearance?.name.rawValue ?? "-")"
+            + " errors=\(GhosttyRuntime.shared.configErrors.count) sheet=\(window?.attachedSheet != nil)"
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
@@ -400,7 +459,7 @@ final class TerminalContainerController: NSViewController {
     /// The command bar or the switcher (PaletteOverlay).
     private let overlay: NSView
     private var views: [String: TerminalView] = [:]
-    private let theme = GhosttyRuntime.shared.theme
+    private var theme = GhosttyRuntime.shared.theme
     private let titleStrip = NSView()
     private let placeholder = NSTextField(labelWithString: "")
     private let reattachButton = NSButton(title: "Attach", target: nil, action: nil)
@@ -582,13 +641,40 @@ final class TerminalContainerController: NSViewController {
         placeholder.stringValue = text
         placeholder.isHidden = false
         reattachButton.isHidden = !reattach
-        if theme.isTranslucent { view.layer?.backgroundColor = theme.chromeBackground.cgColor }
+        updateBackground()
     }
 
     private func hidePlaceholder() {
         tabBar.isHidden = false
         placeholder.isHidden = true
         reattachButton.isHidden = true
-        if theme.isTranslucent { view.layer?.backgroundColor = NSColor.clear.cgColor }
+        updateBackground()
     }
+
+    func applyTheme(_ theme: TerminalTheme) {
+        self.theme = theme
+        titleStrip.layer?.backgroundColor = theme.chromeBackground.cgColor
+        updateBackground()
+    }
+
+    /// Under the terminals: clear with translucent terminals, or it would
+    /// add to their background, except while no terminal is shown.
+    private func updateBackground() {
+        let color = !theme.isTranslucent ? theme.background
+            : placeholder.isHidden ? .clear : theme.chromeBackground
+        view.layer?.backgroundColor = color.cgColor
+    }
+}
+
+/// Renders its content with the current terminal theme, again whenever a
+/// reloaded Ghostty config changes it.
+struct Themed<Content: View>: View {
+    @ObservedObject private var runtime = GhosttyRuntime.shared
+    private let content: (TerminalTheme) -> Content
+
+    init(@ViewBuilder _ content: @escaping (TerminalTheme) -> Content) {
+        self.content = content
+    }
+
+    var body: some View { content(runtime.theme) }
 }

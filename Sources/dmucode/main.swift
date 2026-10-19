@@ -50,6 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let main = NSMenu()
 
         let app = NSMenu()
+        // ⌘⇧, like Ghostty; saving a config file reloads it too.
+        app.addItem(withTitle: "Reload Ghostty Config", action: #selector(MainWindowController.reloadGhosttyConfig(_:)), keyEquivalent: ",")
+            .keyEquivalentModifierMask = [.command, .shift]
+        app.addItem(.separator())
         app.addItem(withTitle: "Hide dmucode", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(.separator())
         // Quitting only detaches: the tmux sessions keep running.
