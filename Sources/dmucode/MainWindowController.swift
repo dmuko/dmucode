@@ -11,6 +11,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let git = GitStatusStore()
     private let commandBar = CommandBarModel()
     private let switcher: SessionSwitcherModel
+    private let palette: PaletteModel
     private let chrome = ChromeTheme(GhosttyRuntime.shared.theme)
     private let terminals: TerminalContainerController
     private var cancellables: Set<AnyCancellable> = []
@@ -18,13 +19,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     init(store: SessionStore) {
         self.store = store
         self.switcher = SessionSwitcherModel(store: store)
+        self.palette = PaletteModel(sessions: switcher, command: commandBar)
         let theme = GhosttyRuntime.shared.theme
-        let git = self.git, commandBar = self.commandBar, switcher = self.switcher, chrome = self.chrome
+        let git = self.git, palette = self.palette, chrome = self.chrome
         // The real actions need self; set below.
         let tabBar = NSHostingView(rootView: Themed(chrome) { TabBarView(
             store: store, git: git, theme: $0, onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }) })
         let overlay = NSHostingView(rootView: Themed(chrome) {
-            PaletteOverlay(commandBar: commandBar, switcher: switcher, store: store, theme: $0) })
+            PaletteView(palette: palette, store: store, theme: $0) })
         self.terminals = TerminalContainerController(tmux: store.tmux, tabBar: tabBar, overlay: overlay)
 
         let window = NSWindow(
@@ -76,10 +78,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
             self.store.runCommandLine(line, in: sessionID, done: done)
         }
-        commandBar.onClose = { [weak self] in self?.terminals.setOverlayVisible(false) }
-        switcher.onClose = { [weak self] in self?.terminals.setOverlayVisible(false) }
+        commandBar.onDone = { [weak self] in self?.palette.close() }
+        palette.onClose = { [weak self] in self?.terminals.setOverlayVisible(false) }
         switcher.onChoose = { [weak self] session, window in
             guard let self else { return }
+            self.palette.close()
             self.store.selectedID = session.id
             if let window, !window.isActive { self.selectWindow(window) }
         }
@@ -343,52 +346,56 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         store.perform { tmux in try tmux.killSession(id: session.id) }
     }
 
-    // MARK: Command bar
+    // MARK: Palette
 
+    /// ⌘: opens the palette as a tmux command line; ⌘K as a session finder.
+    /// Either closes it if it is open in that mode, and switches it otherwise.
     @objc func toggleCommandBar(_ sender: Any?) {
-        if commandBar.isOpen {
-            commandBar.close()
+        guard store.selectedID != nil else { NSSound.beep(); return }
+        togglePalette(.command)
+    }
+
+    @objc func toggleSwitcher(_ sender: Any?) {
+        guard !store.sessions.isEmpty else { NSSound.beep(); return }
+        togglePalette(.sessions)
+    }
+
+    private func togglePalette(_ mode: PaletteModel.Mode) {
+        if palette.isOpen, palette.mode == mode {
+            palette.close()
             return
         }
-        guard store.selectedID != nil else { NSSound.beep(); return }
+        // For completions once a ":" is typed, whichever way it opened.
         if commandBar.commands.isEmpty {
             store.listCommands { [weak self] in self?.commandBar.commands = $0 }
         }
-        switcher.close()
-        commandBar.open()
+        palette.open(mode)
         terminals.setOverlayVisible(true)
     }
 
-    // MARK: Session switcher
-
-    @objc func toggleSwitcher(_ sender: Any?) {
-        if switcher.isOpen {
-            switcher.close()
-            return
+    /// Submits a line in the palette (debug hook): "logs" switches,
+    /// ":list-windows" runs a command.
+    func runInPalette(_ line: String) {
+        let mode: PaletteModel.Mode = line.hasPrefix(":") ? .command : .sessions
+        if !palette.isOpen || palette.mode != mode { togglePalette(mode) }
+        if mode == .command {
+            commandBar.text = String(line.dropFirst())
+            commandBar.submit()
+        } else {
+            switcher.text = line
+            switcher.choose()
         }
-        guard !store.sessions.isEmpty else { NSSound.beep(); return }
-        commandBar.close()
-        switcher.open()
-        terminals.setOverlayVisible(true)
     }
 
-    var switcherState: String { switcher.debugState }
-
-    /// Runs a line through the command bar (debug hook).
-    func runInCommandBar(_ line: String) {
-        if !commandBar.isOpen { toggleCommandBar(nil) }
-        commandBar.text = line
-        commandBar.submit()
-    }
-
-    var commandBarState: String {
+    var paletteState: String {
         let outcome: String
         switch commandBar.outcome {
         case .output(let text)?: outcome = "output=" + text.replacingOccurrences(of: "\n", with: " | ")
         case .error(let text)?: outcome = "error=" + text
         case nil: outcome = "-"
         }
-        return "cmdbar open=\(commandBar.isOpen) \(outcome)"
+        let detail = palette.mode == .command ? "text=\(commandBar.text) \(outcome)" : switcher.debugState
+        return "palette open=\(palette.isOpen) mode=\(palette.mode) \(detail)"
     }
 
     // MARK: Windows (tabs)

@@ -1,10 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// The ⌘K switcher: finds a session by its name, or by a window's name or
-/// directory, and switches to it (and to that window). Without a query the
-/// sessions are listed by when they were last shown, the current one last,
-/// so ⌘K Return goes back to the previous session.
+/// The palette's session mode (⌘K): finds a session by its name, or by a
+/// window's name or directory, and switches to it (and to that window).
+/// Without a query the sessions are listed by when they were last shown,
+/// the current one last, so ⌘K Return goes back to the previous session.
 final class SessionSwitcherModel: ObservableObject {
     struct Item: Identifiable {
         let session: TmuxSession
@@ -18,14 +18,12 @@ final class SessionSwitcherModel: ObservableObject {
         var id: String { session.id }
     }
 
-    @Published private(set) var isOpen = false
     @Published var text = "" {
         didSet { if text != oldValue { selection = 0 } }
     }
     @Published var selection = 0
 
     var onChoose: ((_ session: TmuxSession, _ window: TmuxWindow?) -> Void)?
-    var onClose: (() -> Void)?
 
     private let store: SessionStore
     private static let maxItems = 10
@@ -34,17 +32,10 @@ final class SessionSwitcherModel: ObservableObject {
         self.store = store
     }
 
-    func open() {
+    /// Empty, for the palette opening again.
+    func reset() {
         text = ""
         selection = 0
-        isOpen = true
-    }
-
-    func close() {
-        guard isOpen else { return }
-        isOpen = false
-        text = ""
-        onClose?()
     }
 
     func move(_ delta: Int) {
@@ -55,7 +46,6 @@ final class SessionSwitcherModel: ObservableObject {
 
     func choose(_ item: Item? = nil) {
         guard let item = item ?? items[safe: selection] else { NSSound.beep(); return }
-        close()
         onChoose?(item.session, item.window)
     }
 
@@ -126,56 +116,36 @@ final class SessionSwitcherModel: ObservableObject {
         let rows = items.enumerated().map { index, item in
             (index == selection ? ">" : " ") + item.session.name + (item.window.map { " [\($0.name)]" } ?? "")
         }
-        return "switcher open=\(isOpen) text=\(text) items=\(rows.joined(separator: ","))"
+        return "text=\(text) items=\(rows.joined(separator: ","))"
     }
 }
 
-struct SessionSwitcherView: View {
+/// Below the palette's field in session mode: the matching sessions.
+struct SessionResults: View {
     @ObservedObject var model: SessionSwitcherModel
     @ObservedObject var store: SessionStore
-    let theme: TerminalTheme
-    @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("Switch to session", text: $model.text)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .focused($focused)
-                    .onSubmit { model.choose() }
-                    .onKeyPress(.upArrow) { model.move(-1); return .handled }
-                    .onKeyPress(.downArrow) { model.move(1); return .handled }
-                    .onExitCommand { model.close() }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-
-            let items = model.items
-            Divider()
-            if items.isEmpty {
-                Text("No matching session")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-            } else {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        SwitcherRow(item: item, selected: index == model.selection,
-                                    current: item.session.id == model.currentID,
-                                    wantsAttention: store.needsAttention(item.session))
-                            .contentShape(Rectangle())
-                            .onTapGesture { model.choose(item) }
-                    }
+        let items = model.items
+        Divider()
+        if items.isEmpty {
+            Text("No matching session")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    SwitcherRow(item: item, selected: index == model.selection,
+                                current: item.session.id == model.currentID,
+                                wantsAttention: store.needsAttention(item.session))
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.choose(item) }
                 }
-                .padding(4)
             }
+            .padding(4)
         }
-        .paletteChrome(theme: theme)
-        .onAppear { focused = true }
     }
 }
 
@@ -222,22 +192,5 @@ private struct SwitcherRow: View {
             result += part
         }
         return result
-    }
-}
-
-/// The floating slot below the tab bar: the ⌘K switcher while it is open,
-/// otherwise the ⌘: command bar (hidden while closed).
-struct PaletteOverlay: View {
-    @ObservedObject var commandBar: CommandBarModel
-    @ObservedObject var switcher: SessionSwitcherModel
-    let store: SessionStore
-    let theme: TerminalTheme
-
-    var body: some View {
-        if switcher.isOpen {
-            SessionSwitcherView(model: switcher, store: store, theme: theme)
-        } else {
-            CommandBarView(model: commandBar, theme: theme)
-        }
     }
 }

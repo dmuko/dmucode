@@ -1,16 +1,17 @@
 import SwiftUI
 
-/// The ⌘: command bar: a native take on tmux's `:` prompt. Lines are parsed
-/// by tmux and run as the shown session's active pane, so they act on what
-/// the terminal shows. Completes command names, shows the usage of the
-/// command being typed, and shows output and errors in place.
+/// The palette's command mode (a leading ":", or ⌘:): a native take on
+/// tmux's `:` prompt. Lines are parsed by tmux and run as the shown
+/// session's active pane, so they act on what the terminal shows. Completes
+/// command names, shows the usage of the command being typed, and shows
+/// output and errors in place.
 final class CommandBarModel: ObservableObject {
     enum Outcome: Equatable {
         case output(String)
         case error(String)
     }
 
-    @Published private(set) var isOpen = false
+    /// The command line, without the palette's ":".
     @Published var text = "" {
         didSet {
             guard text != oldValue else { return }
@@ -25,27 +26,19 @@ final class CommandBarModel: ObservableObject {
 
     /// Runs a line; calls back on the main thread with its output.
     var onRun: ((_ line: String, _ done: @escaping (Result<String, Error>) -> Void) -> Void)?
-    var onClose: (() -> Void)?
+    /// A command ran without output: the palette closes.
+    var onDone: (() -> Void)?
 
     private static let historyKey = "commandBarHistory"
     private var history: [String] = UserDefaults.standard.stringArray(forKey: historyKey) ?? []
     /// Position while stepping through history with ↑/↓; nil when not.
     private var historyIndex: Int?
 
-    func open() {
-        isOpen = true
-    }
-
-    func close() {
-        guard isOpen else { return }
-        isOpen = false
+    /// Empty, for the palette opening again.
+    func reset() {
         text = ""
+        outcome = nil
         historyIndex = nil
-        onClose?()
-    }
-
-    func toggle() {
-        isOpen ? close() : open()
     }
 
     // MARK: Completion
@@ -102,7 +95,7 @@ final class CommandBarModel: ObservableObject {
             self.isRunning = false
             switch result {
             case .success(let output) where output.isEmpty:
-                self.close()
+                self.onDone?()
             case .success(let output):
                 self.outcome = .output(output)
             case .failure(let error):
@@ -120,91 +113,63 @@ final class CommandBarModel: ObservableObject {
     }
 }
 
-struct CommandBarView: View {
+/// Below the palette's field in command mode: completions, else the usage
+/// of the command being typed; and the last command's output or error.
+struct CommandResults: View {
     @ObservedObject var model: CommandBarModel
-    let theme: TerminalTheme
-    @FocusState private var focused: Bool
+    /// A completion was clicked.
+    var onPick: (TmuxCommand) -> Void
 
-    private let mono = Font.system(size: 13, design: .monospaced)
+    static let mono = Font.system(size: 13, design: .monospaced)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Text(":")
-                    .font(mono)
-                    .foregroundStyle(.secondary)
-                TextField("tmux command", text: $model.text)
-                    .textFieldStyle(.plain)
-                    .font(mono)
-                    .focused($focused)
-                    .onSubmit { model.submit() }
-                    .onKeyPress(.upArrow) { model.move(-1); return .handled }
-                    .onKeyPress(.downArrow) { model.move(1); return .handled }
-                    .onKeyPress(.tab) { model.complete(); return .handled }
-                    .onExitCommand { model.close() }
-                if model.isRunning {
-                    ProgressView().controlSize(.small)
+        let suggestions = model.suggestions
+        if !suggestions.isEmpty {
+            Divider()
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(suggestions.enumerated()), id: \.element.name) { index, command in
+                    SuggestionRow(command: command, selected: index == model.selection, mono: Self.mono)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onPick(command) }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-
-            let suggestions = model.suggestions
-            if !suggestions.isEmpty {
-                Divider()
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(suggestions.enumerated()), id: \.element.name) { index, command in
-                        SuggestionRow(command: command, selected: index == model.selection, mono: mono)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                model.complete(command)
-                                focused = true
-                            }
-                    }
-                }
-                .padding(4)
-            } else if let command = model.currentCommand, model.outcome == nil {
-                Divider()
-                Text("\(command.name) \(command.usage)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            if let outcome = model.outcome {
-                Divider()
-                ScrollView {
-                    Group {
-                        switch outcome {
-                        case .output(let text):
-                            Text(text).foregroundStyle(.primary)
-                        case .error(let text):
-                            Text(text).foregroundStyle(.red)
-                        }
-                    }
-                    .font(.system(size: 12, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                }
-                .frame(maxHeight: 240)
-                .fixedSize(horizontal: false, vertical: true)
-            }
+            .padding(4)
+        } else if let command = model.currentCommand, model.outcome == nil {
+            Divider()
+            Text("\(command.name) \(command.usage)")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .paletteChrome(theme: theme)
-        // Only gains focus here; on close the terminal takes it back
-        // (TerminalContainerController.setOverlayVisible).
-        .onChange(of: model.isOpen) { _, open in if open { focused = true } }
-        .onAppear { focused = model.isOpen }
+
+        if let outcome = model.outcome {
+            Divider()
+            ScrollView {
+                Group {
+                    switch outcome {
+                    case .output(let text):
+                        Text(text).foregroundStyle(.primary)
+                    case .error(let text):
+                        Text(text).foregroundStyle(.red)
+                    }
+                }
+                .font(.system(size: 12, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+            .frame(maxHeight: 240)
+            .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
 extension View {
-    /// The floating panel shared by the ⌘: command bar and the ⌘K switcher.
+    /// The palette's floating panel.
     func paletteChrome(theme: TerminalTheme) -> some View {
         frame(width: 600)
             .background(Color(nsColor: theme.background))
