@@ -30,6 +30,38 @@ struct TmuxWindow: Identifiable, Equatable {
     var hasActivity = false
 }
 
+/// A pane, for the palette's search. Fetched when the palette opens.
+struct TmuxPane: Equatable {
+    /// tmux's pane id, e.g. "%5".
+    let id: String
+    let sessionID: String
+    let windowID: String
+    /// The active pane of its window.
+    let isActive: Bool
+    let command: String
+    let path: String
+    /// Set by the program in the pane (OSC 2): Claude Code puts its topic
+    /// there, nvim its command line, shells often the directory.
+    let title: String
+    /// The title is still tmux's default, the host name.
+    let hasDefaultTitle: Bool
+
+    private static let shells: Set<String> = ["fish", "zsh", "bash", "sh", "dash", "tcsh", "nu"]
+
+    /// The title when it says more than the host name or a directory.
+    var meaningfulTitle: String? {
+        let title = self.title.trimmingCharacters(in: .whitespaces)
+        guard !title.isEmpty, !hasDefaultTitle, !title.hasPrefix("~"), !title.hasPrefix("/"),
+              title != command else { return nil }
+        return title
+    }
+
+    /// The program, unless it is just the shell.
+    var meaningfulCommand: String? {
+        Self.shells.contains(command) || command.isEmpty ? nil : command
+    }
+}
+
 /// A tmux command, offered as a completion in the command bar.
 struct TmuxCommand {
     let name: String
@@ -68,6 +100,24 @@ struct Tmux {
     static let listWindowsArgs = ["list-windows", "-a", "-F",
                                   "#{session_id}\t#{window_id}\t#{window_index}\t#{window_active}#{window_bell_flag}#{window_activity_flag}\t#{pane_current_path}\t#{window_name}"]
     static let listClientsArgs = ["list-clients", "-F", "#{session_id} #{client_control_mode}"]
+    /// Flags: pane_active, and whether the title is the host name (tmux's
+    /// default). The title goes last: programs put anything in it.
+    static let listPanesArgs = ["list-panes", "-a", "-F",
+                                "#{session_id}\t#{window_id}\t#{pane_id}\t#{pane_active}"
+                                    + "#{||:#{==:#{pane_title},#{host}},#{==:#{pane_title},#{host_short}}}"
+                                    + "\t#{pane_current_command}\t#{pane_current_path}\t#{pane_title}"]
+
+    static func parsePanes(_ lines: [String]) -> [TmuxPane] {
+        lines.compactMap { line in
+            let fields = line.split(separator: "\t", maxSplits: 6, omittingEmptySubsequences: false)
+            let flags = Array(fields.count == 7 ? fields[3] : "")
+            guard fields.count == 7, flags.count == 2 else { return nil }
+            return TmuxPane(
+                id: String(fields[2]), sessionID: String(fields[0]), windowID: String(fields[1]),
+                isActive: flags[0] == "1", command: String(fields[4]), path: String(fields[5]),
+                title: String(fields[6]), hasDefaultTitle: flags[1] == "1")
+        }
+    }
 
     static func parseSessions(sessions: [String], windows: [String], clients: [String]) -> [TmuxSession] {
         var attached: [String: Int] = [:]
@@ -170,6 +220,17 @@ struct Tmux {
     func selectWindow(sessionID: String, windowID: String) throws {
         let result = try run(["select-window", "-t", sessionID + ":" + windowID])
         guard result.status == 0 else { throw TmuxError(description: result.stderr) }
+    }
+
+    func selectPane(id: String) throws {
+        let result = try run(["select-pane", "-t", id])
+        guard result.status == 0 else { throw TmuxError(description: result.stderr) }
+    }
+
+    func listPanes() throws -> [TmuxPane] {
+        let result = try run(Self.listPanesArgs)
+        guard result.status == 0 else { throw TmuxError(description: result.stderr) }
+        return Self.parsePanes(result.stdout.split(separator: "\n").map(String.init))
     }
 
     /// Opens a new window after the session's last one, in the current

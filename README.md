@@ -36,7 +36,7 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 | ⌘R | nimeä sessio uudelleen |
 | ⌃⌘S | näytä / piilota sivupalkki |
 | ⌃⌘F | koko näytön tila (natiivi); ikkuna ja sivupalkki ovat silloin läpinäkymättömiä kuten Ghosttyssa |
-| ⌘K | paletti, sessiotila: sumea haku session nimestä tai ikkunan nimestä ja hakemistosta. Tyhjällä haulla viimeksi käytetty ensin, joten ⌘K ↩ palaa edelliseen sessioon. ⌘K korvaa Ghosttyn `clear_screen`-pikanäppäimen; tmuxissa ruudun tyhjentää `clear` tai C-l. |
+| ⌘K | paletti, sessiotila: sumea haku session nimestä, ikkunan nimestä ja hakemistosta sekä panen otsikosta ja ohjelmasta. Esimerkiksi Claude Code kirjoittaa panen otsikoksi keskustelunsa aiheen. Return valitsee session, ikkunan ja panen. Otsikoita, jotka ovat pelkkä koneen nimi tai hakemisto, ei haeta. Tyhjällä haulla viimeksi käytetty ensin, joten ⌘K ↩ palaa edelliseen sessioon. ⌘K korvaa Ghosttyn `clear_screen`-pikanäppäimen; tmuxissa ruudun tyhjentää `clear` tai C-l. |
 | ⌘K : | paletin komentotila: kun hakuun kirjoittaa ensimmäiseksi merkiksi `:`, paletti muuttuu tmuxin komentoriviksi samassa kentässä. ⌫ tyhjällä komentorivillä palaa sessiohakuun. |
 | ⌘: | avaa paletin suoraan komentotilassa (kuten `prefix :`) |
 | oikea klikkaus | Rename / Move to Group / Kill |
