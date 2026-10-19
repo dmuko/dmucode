@@ -7,7 +7,7 @@
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.dmucode.app</string>
+	<string>com.dmuko.dmucode</string>
 	<key>CFBundleName</key>
 	<string>dmucode</string>
 	<key>CFBundlePackageType</key>
