@@ -8,6 +8,7 @@ import SwiftUI
 /// hidden so switching is instant.
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     let store: SessionStore
+    private let git = GitStatusStore()
     private let terminals: TerminalContainerController
     private var cancellables: Set<AnyCancellable> = []
 
@@ -16,7 +17,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let theme = GhosttyRuntime.shared.theme
         // The real actions need self; set below.
         let tabBar = NSHostingView(rootView: TabBarView(
-            store: store, theme: theme, onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }))
+            store: store, git: git, theme: theme, onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }))
         self.terminals = TerminalContainerController(tmux: store.tmux, tabBar: tabBar)
 
         let window = NSWindow(
@@ -36,6 +37,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
         tabBar.rootView = TabBarView(
             store: store,
+            git: git,
             theme: theme,
             onSelect: { [weak self] in self?.selectWindow($0) },
             onNew: { [weak self] in self?.newWindow() },
@@ -76,6 +78,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.showSelected() }
+            .store(in: &cancellables)
+        // Git status for the directories of the selected session's tabs.
+        store.$sessions.combineLatest(store.$selectedID)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] sessions, selectedID in
+                let windows = sessions.first(where: { $0.id == selectedID })?.windows ?? []
+                self?.git.track(Set(windows.map(\.path).filter { !$0.isEmpty }))
+            }
             .store(in: &cancellables)
         store.$sessions
             .receive(on: RunLoop.main)

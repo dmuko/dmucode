@@ -55,13 +55,14 @@ final class SessionStore: ObservableObject {
     }
 
     /// Notifications after which the session list (names, windows, current
-    /// window, attached clients) may have changed. Windows of the control
+    /// window, paths, attached clients) may have changed. Windows of the control
     /// client's own session come as %window-*, others as %unlinked-window-*.
     private static let listEvents: Set<String> = [
         "%sessions-changed", "%session-renamed", "%session-changed",
         "%client-session-changed", "%client-detached", "%session-window-changed",
         "%window-add", "%window-close", "%window-renamed",
         "%unlinked-window-add", "%unlinked-window-close", "%unlinked-window-renamed",
+        "%subscription-changed",
     ]
 
     init(tmux: Tmux) {
