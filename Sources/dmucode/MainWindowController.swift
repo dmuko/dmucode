@@ -80,11 +80,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         commandBar.onDone = { [weak self] in self?.palette.close() }
         palette.onClose = { [weak self] in self?.terminals.setOverlayVisible(false) }
-        switcher.onChoose = { [weak self] session, window in
+        switcher.onChoose = { [weak self] session, window, pane in
             guard let self else { return }
             self.palette.close()
             self.store.selectedID = session.id
             if let window, !window.isActive { self.selectWindow(window) }
+            if let pane, !pane.isActive { self.store.selectPane(pane.id) }
         }
         terminals.onAlert = { [weak self] sessionID, message in
             guard let self else { return }
@@ -369,6 +370,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if commandBar.commands.isEmpty {
             store.listCommands { [weak self] in self?.commandBar.commands = $0 }
         }
+        store.listPanes { [weak self] in self?.switcher.panes = $0 }
         palette.open(mode)
         terminals.setOverlayVisible(true)
     }

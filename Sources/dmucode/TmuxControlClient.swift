@@ -125,6 +125,10 @@ final class TmuxControlClient {
         }
     }
 
+    func listPanes(_ completion: @escaping (Result<[TmuxPane], TmuxError>) -> Void) {
+        send(Tmux.listPanesArgs) { completion($0.map(Tmux.parsePanes)) }
+    }
+
     // MARK: Reading
 
     private func consume(_ data: Data) {

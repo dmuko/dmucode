@@ -266,6 +266,23 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    /// Every pane, over the control connection when there is one.
+    func listPanes(_ done: @escaping ([TmuxPane]) -> Void) {
+        if let control {
+            control.listPanes { done((try? $0.get()) ?? []) }
+            return
+        }
+        let tmux = self.tmux
+        queue.async {
+            let panes = (try? tmux.listPanes()) ?? []
+            DispatchQueue.main.async { done(panes) }
+        }
+    }
+
+    func selectPane(_ paneID: String) {
+        perform { tmux in try tmux.selectPane(id: paneID) }
+    }
+
     func listCommands(_ done: @escaping ([TmuxCommand]) -> Void) {
         let tmux = self.tmux
         queue.async {

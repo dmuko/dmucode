@@ -1,18 +1,22 @@
 import AppKit
 import SwiftUI
 
-/// The palette's session mode (⌘K): finds a session by its name, or by a
-/// window's name or directory, and switches to it (and to that window).
+/// The palette's session mode (⌘K): finds a session by its name, by a
+/// window's name or directory, or by a pane's title or program, and
+/// switches to it (and to that window and pane).
 /// Without a query the sessions are listed by when they were last shown,
 /// the current one last, so ⌘K Return goes back to the previous session.
 final class SessionSwitcherModel: ObservableObject {
     struct Item: Identifiable {
         let session: TmuxSession
-        /// The window that matched; nil when the session itself is the match.
+        /// The window that matched, or the matched pane's; nil when the
+        /// session itself is the match.
         let window: TmuxWindow?
+        let pane: TmuxPane?
         let nameMatches: [Int]
-        /// The matched window's name and directory, else the session's
-        /// current directory.
+        /// The matched window's name and directory, or the matched pane's
+        /// window name, title and program; else the session's current
+        /// directory.
         let detail: String
         let detailMatches: [Int]
         var id: String { session.id }
@@ -22,8 +26,11 @@ final class SessionSwitcherModel: ObservableObject {
         didSet { if text != oldValue { selection = 0 } }
     }
     @Published var selection = 0
+    /// Every pane, fetched when the palette opens: their titles change
+    /// without an event (Claude Code's follows its conversation).
+    @Published var panes: [TmuxPane] = []
 
-    var onChoose: ((_ session: TmuxSession, _ window: TmuxWindow?) -> Void)?
+    var onChoose: ((_ session: TmuxSession, _ window: TmuxWindow?, _ pane: TmuxPane?) -> Void)?
 
     private let store: SessionStore
     private static let maxItems = 10
@@ -46,7 +53,7 @@ final class SessionSwitcherModel: ObservableObject {
 
     func choose(_ item: Item? = nil) {
         guard let item = item ?? items[safe: selection] else { NSSound.beep(); return }
-        onChoose?(item.session, item.window)
+        onChoose?(item.session, item.window, item.pane)
     }
 
     var currentID: String? { store.selectedID }
@@ -56,13 +63,14 @@ final class SessionSwitcherModel: ObservableObject {
         let query = text.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else {
             return sessions.prefix(Self.maxItems).map { session in
-                Item(session: session, window: nil, nameMatches: [],
+                Item(session: session, window: nil, pane: nil, nameMatches: [],
                      detail: Self.directory(session.windows.first(where: \.isActive)), detailMatches: [])
             }
         }
 
         // Each session once, at its best match; ties keep recency order and
-        // prefer the session's own name.
+        // prefer the session's own name, then windows, then panes.
+        let panesBySession = Dictionary(grouping: panes, by: \.sessionID)
         var scored: [(score: Int, item: Item)] = []
         for session in sessions {
             var best: (score: Int, item: Item)?
@@ -72,18 +80,35 @@ final class SessionSwitcherModel: ObservableObject {
             }
             let current = Self.directory(session.windows.first(where: \.isActive))
             consider(FuzzyMatch.match(query, in: session.name)) {
-                Item(session: session, window: nil, nameMatches: $0.indices, detail: current, detailMatches: [])
+                Item(session: session, window: nil, pane: nil, nameMatches: $0.indices, detail: current, detailMatches: [])
             }
             for window in session.windows {
                 let path = Self.directory(window)
                 let detail = window.name + "  " + path
                 consider(FuzzyMatch.match(query, in: window.name)) {
-                    Item(session: session, window: window, nameMatches: [], detail: detail, detailMatches: $0.indices)
+                    Item(session: session, window: window, pane: nil, nameMatches: [], detail: detail,
+                         detailMatches: $0.indices)
                 }
                 let offset = window.name.count + 2
                 consider(FuzzyMatch.match(query, in: path)) {
-                    Item(session: session, window: window, nameMatches: [], detail: detail,
+                    Item(session: session, window: window, pane: nil, nameMatches: [], detail: detail,
                          detailMatches: $0.indices.map { $0 + offset })
+                }
+            }
+            // A pane by its title or program, shown after its window's name:
+            // "claude  ✳ Fix the login bug  claude".
+            for pane in panesBySession[session.id] ?? [] {
+                guard let window = session.windows.first(where: { $0.id == pane.windowID }) else { continue }
+                let parts = [pane.meaningfulTitle, pane.meaningfulCommand].compactMap { $0 }
+                var offset = window.name.count + 2
+                let detail = ([window.name] + parts).joined(separator: "  ")
+                for part in parts {
+                    let start = offset
+                    consider(FuzzyMatch.match(query, in: part)) {
+                        Item(session: session, window: window, pane: pane, nameMatches: [], detail: detail,
+                             detailMatches: $0.indices.map { $0 + start })
+                    }
+                    offset += part.count + 2
                 }
             }
             if let best { scored.append(best) }
@@ -115,6 +140,7 @@ final class SessionSwitcherModel: ObservableObject {
     var debugState: String {
         let rows = items.enumerated().map { index, item in
             (index == selection ? ">" : " ") + item.session.name + (item.window.map { " [\($0.name)]" } ?? "")
+                + (item.pane.map { " {\($0.id)}" } ?? "")
         }
         return "text=\(text) items=\(rows.joined(separator: ","))"
     }
