@@ -13,6 +13,7 @@ import IOSurface
 ///   select N        select the Nth session in the sidebar
 ///   tab N           select the Nth window tab of the selected session
 ///   newtab          open a new window in the selected session (the + button)
+///   cmdbar LINE     run LINE through the ⌘: command bar (state shows the result)
 ///   new NAME        create a session (as the New Session button does)
 ///   state NAME      write the sidebar state (live, selection, sessions) to NAME.txt
 ///   pixels NAME     write raw RGBA samples of the visible terminal's IOSurface to NAME.txt
@@ -50,6 +51,8 @@ enum DebugHooks {
             }
         case "state":
             var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque) restoring=\(store.isRestoring)"]
+            if let controller = window.windowController as? MainWindowController { lines.append(controller.commandBarState) }
+            lines.append("firstResponder=\(window.firstResponder.map { String(describing: type(of: $0)) } ?? "-")")
             lines += store.sessions.map { session in
                 let windows = session.windows.map {
                     "\($0.id)\($0.isActive ? "*" : "")\($0.hasBell ? "!" : "")\($0.hasActivity ? "#" : ""):\($0.name)"
@@ -82,6 +85,8 @@ enum DebugHooks {
             if let n = Int(arg), let session = store.selectedSession, session.windows.indices.contains(n - 1) {
                 store.selectWindow(session.windows[n - 1].id, in: session.id)
             }
+        case "cmdbar":
+            (window.windowController as? MainWindowController)?.runInCommandBar(arg)
         case "newtab":
             if let id = store.selectedID {
                 store.perform { tmux in try tmux.newWindow(sessionID: id) }
@@ -191,10 +196,26 @@ enum DebugHooks {
             let rect = NSRect(x: frame.minX, y: frame.maxY - size.height, width: size.width, height: size.height)
             NSImage(cgImage: cg, size: size).draw(in: rect)
         }
+        // Views stacked above the terminals (e.g. the command bar) were
+        // painted over by the terminal images; draw them again on top.
+        for overlay in overlays(in: content) {
+            guard let rep = overlay.bitmapImageRepForCachingDisplay(in: overlay.bounds) else { continue }
+            overlay.cacheDisplay(in: overlay.bounds, to: rep)
+            // sourceOver: draw(in:) would copy the transparent margins as-is.
+            rep.draw(in: overlay.convert(overlay.bounds, to: content), from: .zero, operation: .sourceOver,
+                     fraction: 1, respectFlipped: true, hints: nil)
+        }
         image.unlockFocus()
         guard let tiff = image.tiffRepresentation,
               let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return }
         try? png.write(to: url)
+    }
+
+    /// Visible siblings above a terminal in z-order.
+    private static func overlays(in content: NSView) -> [NSView] {
+        guard let terminal = allTerminals(in: content).first, let parent = terminal.superview else { return [] }
+        let firstTerminal = parent.subviews.firstIndex { $0 is TerminalView } ?? 0
+        return parent.subviews[(firstTerminal + 1)...].filter { !($0 is TerminalView) && !$0.isHidden }
     }
 
     private static func allTerminals(in view: NSView) -> [TerminalView] {

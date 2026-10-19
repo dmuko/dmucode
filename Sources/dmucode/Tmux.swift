@@ -30,6 +30,13 @@ struct TmuxWindow: Identifiable, Equatable {
     var hasActivity = false
 }
 
+/// A tmux command, offered as a completion in the command bar.
+struct TmuxCommand {
+    let name: String
+    let alias: String
+    let usage: String
+}
+
 struct TmuxError: Error, CustomStringConvertible {
     let description: String
 }
@@ -182,6 +189,46 @@ struct Tmux {
         guard result.status == 0 else { throw TmuxError(description: result.stderr) }
     }
 
+    // MARK: Command bar
+
+    /// tmux's commands with their aliases and usage, for completion.
+    func listCommands() throws -> [TmuxCommand] {
+        let result = try run(["list-commands", "-F", "#{command_list_name}\t#{command_list_alias}\t#{command_list_usage}"])
+        guard result.status == 0 else { throw TmuxError(description: result.stderr) }
+        return result.stdout.split(separator: "\n").compactMap { line in
+            let fields = line.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
+            guard fields.count == 3 else { return nil }
+            return TmuxCommand(name: String(fields[0]), alias: String(fields[1]), usage: String(fields[2]))
+        }
+    }
+
+    /// The active pane of the session's current window: what its terminal shows.
+    func activePane(sessionID: String) throws -> String {
+        let result = try run(["display-message", "-p", "-t", sessionID, "#{pane_id}"])
+        guard result.status == 0 else { throw TmuxError(description: result.stderr) }
+        return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Runs a line typed into the command bar, parsed by tmux like its own
+    /// `:` prompt. With TMUX_PANE set, tmux treats that pane as current, so
+    /// commands without -t act on what the terminal shows; commands that need
+    /// a client (detach-client, switch-client) get the terminal's client, as
+    /// tmux picks one attached to that session. Returns the output
+    /// (e.g. of display -p or list-*); errors are thrown with tmux's message.
+    func runCommandLine(_ line: String, pane: String) throws -> String {
+        var env = environment
+        env["TMUX_PANE"] = pane
+        let result = try run(["source-file", "-"], input: line + "\n", environment: env)
+        guard result.status == 0 else {
+            // source-file reports parse and command errors on stdout:
+            // "-:1: unknown command: foo" -> "unknown command: foo"
+            let stderr = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+            let message = stderr.isEmpty ? result.stdout.trimmingCharacters(in: .whitespacesAndNewlines) : stderr
+            throw TmuxError(description: message.replacingOccurrences(of: #"^-:\d+: "#, with: "", options: .regularExpression))
+        }
+        return result.stdout.trimmingCharacters(in: .newlines)
+    }
+
     /// The shell command a terminal surface runs to show a session.
     func attachCommand(sessionID: String) -> String {
         ([executable] + globalArgs + ["attach-session", "-t", sessionID])
@@ -208,18 +255,25 @@ struct Tmux {
         return env
     }
 
-    private func run(_ args: [String]) throws -> (status: Int32, stdout: String, stderr: String) {
+    private func run(
+        _ args: [String], input: String? = nil, environment: [String: String]? = nil
+    ) throws -> (status: Int32, stdout: String, stderr: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = globalArgs + args
 
-        process.environment = environment
+        process.environment = environment ?? self.environment
 
         let out = Pipe(), err = Pipe()
         process.standardOutput = out
         process.standardError = err
-        process.standardInput = FileHandle.nullDevice
+        let stdin = input.map { _ in Pipe() }
+        process.standardInput = stdin ?? FileHandle.nullDevice
         try process.run()
+        if let stdin, let input {
+            try? stdin.fileHandleForWriting.write(contentsOf: Data(input.utf8))
+            try? stdin.fileHandleForWriting.close()
+        }
         let stdout = out.fileHandleForReading.readDataToEndOfFile()
         let stderr = err.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()

@@ -33,6 +33,7 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 | ⌘↓ / ⌘↑ | seuraava / edellinen sessio |
 | ⌘R | nimeä sessio uudelleen |
 | ⌃⌘S | näytä / piilota sivupalkki |
+| ⌘: | tmux-komentopalkki (kuten `prefix :`) |
 | oikea klikkaus | Rename / Kill |
 | tabin klikkaus | valitse tmux-ikkuna |
 | ⌘T tai tabipalkin + | uusi tmux-ikkuna nykyisen panen hakemistoon |
@@ -51,7 +52,7 @@ Ympäristömuuttujat:
 - `DMUCODE_TMUX_SOCKET=nimi` käyttää erillistä tmux-palvelinta (`tmux -L nimi`). Hyödyllinen testaukseen, ettei oikeisiin sessioihin kosketa.
 - `DMUCODE_TMUX=/polku/tmux` ohittaa tmuxin automaattisen etsinnän.
 - `DMUCODE_RESURRECT_DIR=hakemisto` vaihtaa hakemiston, josta tmux-resurrectin tallennusta etsitään (testejä varten).
-- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `key`, `select`, `tab`, `newtab`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
+- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `key`, `select`, `tab`, `newtab`, `cmdbar`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
 
 ## Rakenne
 
@@ -61,6 +62,7 @@ Ympäristömuuttujat:
 - [MainWindowController.swift](Sources/dmucode/MainWindowController.swift) ja [SidebarView.swift](Sources/dmucode/SidebarView.swift): ikkuna, sivupalkki ja terminaalinäkymien vaihto.
 - [TabBarView.swift](Sources/dmucode/TabBarView.swift): valitun session tmux-ikkunat tabeina.
 - [GitStatus.swift](Sources/dmucode/GitStatus.swift): tabien git-tila.
+- [CommandBar.swift](Sources/dmucode/CommandBar.swift): ⌘:-komentopalkki.
 - [GhosttyInput.swift](Sources/dmucode/GhosttyInput.swift): näppäinten muunnokset, sovitettu Ghosttyn macOS-sovelluksesta (MIT).
 - [scripts/make-icon.swift](scripts/make-icon.swift): piirtää sovelluksen ikonin (D ja C osittain päällekkäin) CoreGraphicsilla. Käytössä on paletti `mocha`. Ikoni luodaan uudelleen komennolla `swift scripts/make-icon.swift icns mocha Resources/AppIcon.icns`, ja kaikkien palettien vertailukuva komennolla `swift scripts/make-icon.swift preview build/icon-preview.png`.
 
@@ -77,6 +79,7 @@ Sovellus pitää yllä yhtä `tmux -C attach-session` -clientia ([TmuxControlCli
   - **tmuxin liput:** `window_bell_flag` ja `window_activity_flag` (jälkimmäinen vain `monitor-activity on`:lla) tulevat samassa tilauksessa kuin polut. Ne kattavat sessiot, joille dmucodessa ei ole terminaalia, sekä muut kuin nykyiset ikkunat. tmux nollaa ne, kun ikkuna valitaan tai sessioon liitytään.
   - **Dockin ikoni** näyttää huomiota haluavien sessioiden määrän.
 - **Claude Code:** oletusasetuksella (`auto`) Claude Code tunnistaa Ghosttyn tmuxin sisältä `TERM=xterm-ghostty`:stä (tmuxin `default-terminal`). Silloin se lähettää OSC 777 -ilmoituksen tmux-passthroughilla (`allow-passthrough on` tarvitaan). Tämä tavoittaa dmucoden vain, kun Claude on session nykyisessä ikkunassa ja sessio on avattu dmucodessa. Kattavampi asetus on `preferredNotifChannel: iterm2_with_bell`: se lähettää OSC 9 -ilmoituksen (teksti) ja bellin, ja bell näkyy tmuxin lipuista myös avaamattomissa sessioissa ja muissa ikkunoissa.
+- **Komentopalkki (⌘:):** natiivi vastine tmuxin `prefix :` -kehotteelle. Rivin jäsentää tmux (`tmux source-file -`), ja se ajetaan ympäristömuuttujalla `TMUX_PANE` asetettuna näytetyn session aktiiviseen paneen. tmux pitää silloin sitä panea nykyisenä, joten komennot ilman `-t`:tä kohdistuvat siihen, mitä terminaali näyttää. Clientia tarvitsevat komennot (`detach-client`, `switch-client`) kohdistuvat sen session clientiin eli dmucoden terminaaliin. Palkki täydentää komentojen nimet `list-commands`:sta (Tab, ↑/↓), näyttää kirjoitettavan komennon käyttöohjeen sekä näyttää tulosteen (esim. `display -p`, `list-windows`) ja virheet. Historia säilyy (↑/↓, kun ehdotuksia ei ole). tmux ei ilmoita control modessa `:`-kehotteen avaamisesta, joten `prefix :` avaa edelleen tmuxin oman kehotteen.
 - **Tabit:** tabit ovat valitun session ikkunat `list-windows -a`:sta. Tabin klikkaus ajaa `select-window -t $session:@ikkuna`, ja tabi vaihtuu heti. Kun ikkunaa vaihdetaan tmuxin sisällä (`prefix n`, `prefix 3`…), `%session-window-changed` siirtää korostuksen. Ikkunan valinta vaikuttaa kaikkiin samaan sessioon liitettyihin clienteihin, kuten tmuxissa muutenkin.
 - **Sivuvaikutus:** control-client näkyy tmuxissa liitettynä clientina. `tmux ls` merkitsee yhden session "(attached)":ksi, ja tmux-konfiguraation `client-attached`-hookit ajetaan. Sivupalkin "attached"-laskuri ei laske control-clienteja.
 
