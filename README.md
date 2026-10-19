@@ -36,8 +36,9 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 | ⌘R | nimeä sessio uudelleen |
 | ⌃⌘S | näytä / piilota sivupalkki |
 | ⌃⌘F | koko näytön tila (natiivi); ikkuna ja sivupalkki ovat silloin läpinäkymättömiä kuten Ghosttyssa |
-| ⌘K | sessionvaihdin: sumea haku session nimestä tai ikkunan nimestä ja hakemistosta. Tyhjällä haulla viimeksi käytetty ensin, joten ⌘K ↩ palaa edelliseen sessioon. ⌘K korvaa Ghosttyn `clear_screen`-pikanäppäimen; tmuxissa ruudun tyhjentää `clear` tai C-l. |
-| ⌘: | tmux-komentopalkki (kuten `prefix :`) |
+| ⌘K | paletti, sessiotila: sumea haku session nimestä tai ikkunan nimestä ja hakemistosta. Tyhjällä haulla viimeksi käytetty ensin, joten ⌘K ↩ palaa edelliseen sessioon. ⌘K korvaa Ghosttyn `clear_screen`-pikanäppäimen; tmuxissa ruudun tyhjentää `clear` tai C-l. |
+| ⌘K : | paletin komentotila: kun hakuun kirjoittaa ensimmäiseksi merkiksi `:`, paletti muuttuu tmuxin komentoriviksi samassa kentässä. ⌫ tyhjällä komentorivillä palaa sessiohakuun. |
+| ⌘: | avaa paletin suoraan komentotilassa (kuten `prefix :`) |
 | oikea klikkaus | Rename / Move to Group / Kill |
 | session raahaus | järjestä sivupalkki; raahaa ryhmän alle siirtääksesi ryhmään |
 | sivupalkin kansio-painike | uusi ryhmä (ryhmän oikea klikkaus: Rename / Remove) |
@@ -76,9 +77,10 @@ Ympäristömuuttujat:
 - [MainWindowController.swift](Sources/dmucode/MainWindowController.swift) ja [SidebarView.swift](Sources/dmucode/SidebarView.swift): ikkuna, sivupalkki ja terminaalinäkymien vaihto.
 - [TabBarView.swift](Sources/dmucode/TabBarView.swift): valitun session tmux-ikkunat tabeina.
 - [GitStatus.swift](Sources/dmucode/GitStatus.swift): tabien git-tila.
-- [CommandBar.swift](Sources/dmucode/CommandBar.swift): ⌘:-komentopalkki.
+- [Palette.swift](Sources/dmucode/Palette.swift): ⌘K-paletti, jossa yksi kenttä ja kaksi tilaa.
+- [CommandBar.swift](Sources/dmucode/CommandBar.swift): paletin komentotila (tmux-komentorivi).
 - [SidebarLayout.swift](Sources/dmucode/SidebarLayout.swift): sivupalkin järjestys ja ryhmät session nimien mukaan.
-- [SessionSwitcher.swift](Sources/dmucode/SessionSwitcher.swift) ja [FuzzyMatch.swift](Sources/dmucode/FuzzyMatch.swift): ⌘K-sessionvaihdin ja sen sumea haku.
+- [SessionSwitcher.swift](Sources/dmucode/SessionSwitcher.swift) ja [FuzzyMatch.swift](Sources/dmucode/FuzzyMatch.swift): paletin sessiotila ja sen sumea haku.
 - [GhosttyInput.swift](Sources/dmucode/GhosttyInput.swift): näppäinten muunnokset, sovitettu Ghosttyn macOS-sovelluksesta (MIT).
 - [scripts/make-icon.swift](scripts/make-icon.swift): piirtää sovelluksen ikonin (D ja C osittain päällekkäin) CoreGraphicsilla. Käytössä on paletti `mocha`. Ikoni luodaan uudelleen komennolla `swift scripts/make-icon.swift icns mocha Resources/AppIcon.icns`, ja kaikkien palettien vertailukuva komennolla `swift scripts/make-icon.swift preview build/icon-preview.png`.
 
@@ -97,7 +99,7 @@ Sovellus pitää yllä yhtä `tmux -C attach-session` -clientia ([TmuxControlCli
   - **tmuxin liput:** `window_bell_flag` ja `window_activity_flag` (jälkimmäinen vain `monitor-activity on`:lla) tulevat samassa tilauksessa kuin polut. Ne kattavat sessiot, joille dmucodessa ei ole terminaalia, sekä muut kuin nykyiset ikkunat. tmux nollaa ne, kun ikkuna valitaan tai sessioon liitytään.
   - **Dockin ikoni** näyttää huomiota haluavien sessioiden määrän.
 - **Claude Code:** oletusasetuksella (`auto`) Claude Code tunnistaa Ghosttyn tmuxin sisältä `TERM=xterm-ghostty`:stä (tmuxin `default-terminal`). Silloin se lähettää OSC 777 -ilmoituksen tmux-passthroughilla (`allow-passthrough on` tarvitaan). Tämä tavoittaa dmucoden vain, kun Claude on session nykyisessä ikkunassa ja sessio on avattu dmucodessa. Kattavampi asetus on `preferredNotifChannel: iterm2_with_bell`: se lähettää OSC 9 -ilmoituksen (teksti) ja bellin, ja bell näkyy tmuxin lipuista myös avaamattomissa sessioissa ja muissa ikkunoissa.
-- **Komentopalkki (⌘:):** natiivi vastine tmuxin `prefix :` -kehotteelle. Rivin jäsentää tmux (`tmux source-file -`), ja se ajetaan ympäristömuuttujalla `TMUX_PANE` asetettuna näytetyn session aktiiviseen paneen. tmux pitää silloin sitä panea nykyisenä, joten komennot ilman `-t`:tä kohdistuvat siihen, mitä terminaali näyttää. Clientia tarvitsevat komennot (`detach-client`, `switch-client`) kohdistuvat sen session clientiin eli dmucoden terminaaliin. Palkki täydentää komentojen nimet `list-commands`:sta (Tab, ↑/↓), näyttää kirjoitettavan komennon käyttöohjeen sekä näyttää tulosteen (esim. `display -p`, `list-windows`) ja virheet. Historia säilyy (↑/↓, kun ehdotuksia ei ole). tmux ei ilmoita control modessa `:`-kehotteen avaamisesta, joten `prefix :` avaa edelleen tmuxin oman kehotteen.
+- **Paletin komentotila (⌘K :, ⌘:):** natiivi vastine tmuxin `prefix :` -kehotteelle. Rivin jäsentää tmux (`tmux source-file -`), ja se ajetaan ympäristömuuttujalla `TMUX_PANE` asetettuna näytetyn session aktiiviseen paneen. tmux pitää silloin sitä panea nykyisenä, joten komennot ilman `-t`:tä kohdistuvat siihen, mitä terminaali näyttää. Clientia tarvitsevat komennot (`detach-client`, `switch-client`) kohdistuvat sen session clientiin eli dmucoden terminaaliin. Palkki täydentää komentojen nimet `list-commands`:sta (Tab, ↑/↓), näyttää kirjoitettavan komennon käyttöohjeen sekä näyttää tulosteen (esim. `display -p`, `list-windows`) ja virheet. Historia säilyy (↑/↓, kun ehdotuksia ei ole). tmux ei ilmoita control modessa `:`-kehotteen avaamisesta, joten `prefix :` avaa edelleen tmuxin oman kehotteen.
 - **Tabit:** tabit ovat valitun session ikkunat `list-windows -a`:sta. Tabin klikkaus ajaa `select-window -t $session:@ikkuna`, ja tabi vaihtuu heti. Kun ikkunaa vaihdetaan tmuxin sisällä (`prefix n`, `prefix 3`…), `%session-window-changed` siirtää korostuksen. Ikkunan valinta vaikuttaa kaikkiin samaan sessioon liitettyihin clienteihin, kuten tmuxissa muutenkin.
 - **Sivuvaikutus:** control-client näkyy tmuxissa liitettynä clientina. `tmux ls` merkitsee yhden session "(attached)":ksi, ja tmux-konfiguraation `client-attached`-hookit ajetaan. Sivupalkin "attached"-laskuri ei laske control-clienteja.
 

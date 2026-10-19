@@ -10,7 +10,7 @@ import IOSurface
 ///   type TEXT       synthesize key presses for TEXT ("\n" = Return)
 ///   ctrl LETTER     synthesize ctrl+LETTER (e.g. tmux prefix: ctrl b)
 ///   key MODS+KEY    run the menu item with that shortcut (e.g. key cmd+right)
-///   press KEY       synthesize up, down or escape
+///   press KEY       synthesize up, down, escape, tab or backspace
 ///   select N        select the Nth session in the sidebar
 ///   tab N           select the Nth window tab of the selected session
 ///   newtab          open a new window in the selected session (the + button)
@@ -18,7 +18,8 @@ import IOSurface
 ///   move FROM TO    drag sidebar row FROM (0-based) to before row TO, as onMove does
 ///   group NAME      create a group; ungroup NAME removes it
 ///   togroup S G     move session S into group G ("-": out of its group)
-///   cmdbar LINE     run LINE through the ⌘: command bar (state shows the result)
+///   cmdbar LINE     run tmux command LINE in the palette (state shows the result)
+///   palette TEXT    type TEXT into the palette and press Return
 ///   new NAME        create a session (as the New Session button does)
 ///   state NAME      write the sidebar state (live, selection, sessions) to NAME.txt
 ///   pixels NAME     write raw RGBA samples of the visible terminal's IOSurface to NAME.txt
@@ -59,11 +60,13 @@ enum DebugHooks {
         case "state":
             var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque) restoring=\(store.isRestoring)"]
             if let controller = window.windowController as? MainWindowController {
-                lines.append(controller.commandBarState)
-                lines.append(controller.switcherState)
+                lines.append(controller.paletteState)
                 lines.append(controller.themeState)
             }
             lines.append("firstResponder=\(window.firstResponder.map { String(describing: type(of: $0)) } ?? "-")")
+            if let editor = window.firstResponder as? NSTextView {
+                lines.append("fieldEditor=[\(editor.string)] cursor=\(editor.selectedRange().location)")
+            }
             let rows = store.sidebarRows.map { row -> String in
                 switch row {
                 case .group(let name): return "#" + name
@@ -118,7 +121,9 @@ enum DebugHooks {
                 store.setGroup(parts[1] == "-" ? nil : parts[1], forSession: session.id)
             }
         case "cmdbar":
-            (window.windowController as? MainWindowController)?.runInCommandBar(arg)
+            (window.windowController as? MainWindowController)?.runInPalette(":" + arg)
+        case "palette":
+            (window.windowController as? MainWindowController)?.runInPalette(arg)
         case "newtab":
             if let id = store.selectedID {
                 store.perform { tmux in try tmux.newWindow(sessionID: id) }
@@ -168,6 +173,8 @@ enum DebugHooks {
             "up": (126, String(UnicodeScalar(NSUpArrowFunctionKey)!), [.numericPad, .function]),
             "down": (125, String(UnicodeScalar(NSDownArrowFunctionKey)!), [.numericPad, .function]),
             "escape": (53, "\u{1b}", []),
+            "tab": (48, "\t", []),
+            "backspace": (51, "\u{7f}", []),
         ]
         guard let key = keys[name] else {
             NSLog("debug: unknown key %@", name)
