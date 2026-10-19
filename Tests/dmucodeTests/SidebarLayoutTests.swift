@@ -249,4 +249,30 @@ struct SidebarLayoutTests {
         layout.renameSession("x", to: "claude")
         #expect(layout.group(ofSession: "claude") == "Agents")
     }
+
+    @Test func prefixMatchesAGroupWhateverItsCase() {
+        var layout = SidebarLayout()
+        layout.addGroup("Projects")
+        layout.include(["projects/testi"])
+        #expect(layout.groups == ["Projects"])
+        #expect(layout.group(ofSession: "projects/testi") == "Projects")
+        #expect(layout.displayName(ofSession: "projects/testi") == "testi")
+    }
+
+    @Test func renameChangingOnlyThePrefixCaseKeepsThePlace() {
+        var layout = SidebarLayout()
+        layout.addGroup("Projects")
+        layout.include(["projects/a", "projects/b"])
+        layout.renameSession("projects/a", to: "Projects/a")
+        #expect(rows(layout, sessions("Projects/a", "projects/b")) == ["#Projects", "Projects/a", "projects/b"])
+    }
+
+    @Test func renameIntoAPrefixUsesTheExistingGroupsCase() {
+        var layout = SidebarLayout()
+        layout.addGroup("Projects")
+        layout.include(["testi"])
+        layout.renameSession("testi", to: "projects/testi")
+        #expect(layout.groups == ["Projects"])
+        #expect(layout.group(ofSession: "projects/testi") == "Projects")
+    }
 }

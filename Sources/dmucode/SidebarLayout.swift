@@ -10,7 +10,9 @@ import Foundation
 ///
 /// A name like "work/api" files itself: seen for the first time (or renamed
 /// to it), the session goes into group "work", created if needed, and is
-/// shown there as "api". Dragging it elsewhere afterwards is up to the user.
+/// shown there as "api". The prefix matches a group whatever its case, so
+/// "projects/x" joins an existing "Projects". Dragging it elsewhere
+/// afterwards is up to the user.
 struct SidebarLayout: Codable, Equatable {
     enum Entry: Codable, Equatable {
         case group(String)
@@ -78,7 +80,8 @@ struct SidebarLayout: Codable, Equatable {
         guard !new.isEmpty else { return }
         entries.insert(contentsOf: new.filter { Self.prefix(of: $0) == nil }.map(Entry.session), at: ungroupedEnd)
         for name in new {
-            guard let group = Self.prefix(of: name)?.group else { continue }
+            guard let prefix = Self.prefix(of: name)?.group else { continue }
+            let group = self.group(matching: prefix) ?? prefix
             addGroup(group)
             entries.insert(.session(name), at: groupRange(group)!.upperBound)
         }
@@ -89,18 +92,19 @@ struct SidebarLayout: Codable, Equatable {
     /// prefix takes it out of the old prefix's group.
     mutating func renameSession(_ old: String, to new: String) {
         guard old != new else { return }
-        let oldGroup = Self.prefix(of: old)?.group, newGroup = Self.prefix(of: new)?.group
-        let inOldGroup = oldGroup != nil && group(ofSession: old) == oldGroup
+        let oldPrefix = Self.prefix(of: old)?.group, newPrefix = Self.prefix(of: new)?.group
+        let inOldGroup = oldPrefix.map { Self.same(group(ofSession: old), $0) } ?? false
         entries.removeAll { $0 == .session(new) }
         guard let index = entries.firstIndex(of: .session(old)) else {
             include([new])
             return
         }
         entries[index] = .session(new)
-        guard newGroup != oldGroup else { return }
-        if let newGroup {
-            addGroup(newGroup)
-            setGroup(newGroup, ofSession: new)
+        guard !Self.same(oldPrefix, newPrefix) else { return }
+        if let newPrefix {
+            let group = group(matching: newPrefix) ?? newPrefix
+            addGroup(group)
+            setGroup(group, ofSession: new)
         } else if inOldGroup {
             setGroup(nil, ofSession: new)
         }
@@ -117,8 +121,19 @@ struct SidebarLayout: Codable, Equatable {
     /// What the sidebar shows: the name without its prefix while the session
     /// is in the group the prefix names, else the whole name.
     func displayName(ofSession name: String) -> String {
-        guard let (group, rest) = Self.prefix(of: name), self.group(ofSession: name) == group else { return name }
+        guard let (prefix, rest) = Self.prefix(of: name), Self.same(group(ofSession: name), prefix) else { return name }
         return rest
+    }
+
+    /// The existing group a prefix names, whatever its case.
+    private func group(matching prefix: String) -> String? {
+        groups.first { Self.same($0, prefix) }
+    }
+
+    /// Group names as prefixes compare them: ignoring case.
+    private static func same(_ a: String?, _ b: String?) -> Bool {
+        guard let a, let b else { return a == nil && b == nil }
+        return a.caseInsensitiveCompare(b) == .orderedSame
     }
 
     /// A drag in the sidebar as List's onMove reports it: `rows[source]`
