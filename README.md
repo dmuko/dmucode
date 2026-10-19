@@ -34,7 +34,11 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 | ⌃⌘S | näytä / piilota sivupalkki |
 | oikea klikkaus | Rename / Kill |
 | tabin klikkaus | valitse tmux-ikkuna |
-| tabipalkin + | uusi tmux-ikkuna nykyisen panen hakemistoon |
+| ⌘T tai tabipalkin + | uusi tmux-ikkuna nykyisen panen hakemistoon |
+| ⌘W | sulje nykyinen tmux-ikkuna (kysyy ensin) |
+| ⌥⌘R | nimeä nykyinen tmux-ikkuna uudelleen |
+| ⌥⌘→ / ⌥⌘← | seuraava / edellinen tabi |
+| ⌥⌘1…⌥⌘9 | hyppää tabiin (järjestysnumero vasemmalta, ei tmuxin indeksi) |
 | tabin oikea klikkaus | Rename / Close Window |
 
 Ghostty-asetukset (fontti, teema) luetaan tiedostosta `~/.config/ghostty/config`.
@@ -44,7 +48,7 @@ Ympäristömuuttujat:
 - `DMUCODE_TMUX_SOCKET=nimi` käyttää erillistä tmux-palvelinta (`tmux -L nimi`). Hyödyllinen testaukseen, ettei oikeisiin sessioihin kosketa.
 - `DMUCODE_TMUX=/polku/tmux` ohittaa tmuxin automaattisen etsinnän.
 - `DMUCODE_RESURRECT_DIR=hakemisto` vaihtaa hakemiston, josta tmux-resurrectin tallennusta etsitään (testejä varten).
-- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `select`, `tab`, `newtab`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
+- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `key`, `select`, `tab`, `newtab`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
 
 ## Rakenne
 
@@ -92,4 +96,4 @@ set -g @continuum-restore 'on'
 - **Continuumin vartija:** continuum ohittaa sekä palautuksen että automaattitallennuksen, jos se luulee toisen tmux-palvelimen olevan käynnissä. Se laskee prosessit, joiden komentorivi alkaa sanalla `tmux`. dmucode kutsuu tmuxia absoluuttisella polulla, joten sen prosessit eivät näy tässä laskussa, mutta esimerkiksi erillinen `tmux -L` -palvelin estää palautuksen.
 - **Mukautettu tallennushakemisto:** `@resurrect-dir` ei ole tuettu palautuksen käynnistyksessä, koska asetusta ei voi lukea ennen kuin palvelin on käynnissä.
 - **Ikkunoiden järjestys:** `swap-window` ei lähetä control mode -ilmoitusta, joten tabien järjestys päivittyy vasta seuraavan tapahtuman (esim. ikkunan vaihdon) jälkeen.
-- **Puuttuvat ominaisuudet:** tabeille ei ole vielä pikanäppäimiä eikä raahausta, ja bell-/activity-merkinnät puuttuvat. Myös `flagsChanged`-modifier-tapahtumat, osoitinmuodot ja asetusikkuna puuttuvat.
+- **Puuttuvat ominaisuudet:** tabeja ei voi vielä raahata, ja bell-/activity-merkinnät puuttuvat. Myös `flagsChanged`-modifier-tapahtumat, osoitinmuodot ja asetusikkuna puuttuvat.

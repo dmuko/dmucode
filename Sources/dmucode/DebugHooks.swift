@@ -9,6 +9,7 @@ import IOSurface
 ///   snapshot NAME   write the window (sidebar + terminal) to NAME.png
 ///   type TEXT       synthesize key presses for TEXT ("\n" = Return)
 ///   ctrl LETTER     synthesize ctrl+LETTER (e.g. tmux prefix: ctrl b)
+///   key MODS+KEY    run the menu item with that shortcut (e.g. key cmd+opt+right)
 ///   select N        select the Nth session in the sidebar
 ///   tab N           select the Nth window tab of the selected session
 ///   newtab          open a new window in the selected session (the + button)
@@ -41,6 +42,8 @@ enum DebugHooks {
             for ch in arg.replacingOccurrences(of: "\\n", with: "\n") { key(String(ch), window: window) }
         case "ctrl":
             key(arg, flags: .control, window: window)
+        case "key":
+            shortcut(arg, window: window)
         case "select":
             if let n = Int(arg), store.sessions.indices.contains(n - 1) {
                 store.selectedID = store.sessions[n - 1].id
@@ -117,6 +120,38 @@ enum DebugHooks {
                 isARepeat: false, keyCode: code) else { continue }
             window.sendEvent(event)
         }
+    }
+
+    private static func shortcut(_ spec: String, window: NSWindow) {
+        var parts = spec.split(separator: "+").map(String.init)
+        guard let name = parts.popLast() else { return }
+        var flags: NSEvent.ModifierFlags = []
+        for mod in parts {
+            switch mod {
+            case "cmd": flags.insert(.command)
+            case "opt": flags.insert(.option)
+            case "shift": flags.insert(.shift)
+            case "ctrl": flags.insert(.control)
+            default: return
+            }
+        }
+        let arrows = ["left": NSLeftArrowFunctionKey, "right": NSRightArrowFunctionKey]
+        let key = arrows[name].map { String(UnicodeScalar($0)!) } ?? name
+        // Matched by hand: AppKit finds a menu action's target through the
+        // key window, and an inactive app (usually a test instance) has none.
+        guard let item = menuItems(NSApp.mainMenu).first(where: {
+            $0.keyEquivalent == key && $0.keyEquivalentModifierMask == flags
+        }), let action = item.action else {
+            NSLog("debug: no menu item for %@", spec)
+            return
+        }
+        if window.firstResponder?.tryToPerform(action, with: item) != true {
+            NSLog("debug: nothing handled %@", spec)
+        }
+    }
+
+    private static func menuItems(_ menu: NSMenu?) -> [NSMenuItem] {
+        (menu?.items ?? []).flatMap { [$0] + menuItems($0.submenu) }
     }
 
     /// AppKit views are rendered with cacheDisplay; terminal surfaces draw

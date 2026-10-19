@@ -184,6 +184,39 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: Windows (tabs)
 
+    // Menu actions: they act on the selected session's current window.
+
+    @objc func newTab(_ sender: Any?) { newWindow() }
+
+    @objc func closeTab(_ sender: Any?) {
+        guard let current = currentWindow else { return }
+        closeWindow(current)
+    }
+
+    @objc func renameTab(_ sender: Any?) {
+        guard let current = currentWindow else { return }
+        renameWindow(current)
+    }
+
+    @objc func selectNextTab(_ sender: Any?) { stepWindow(1) }
+    @objc func selectPreviousTab(_ sender: Any?) { stepWindow(-1) }
+
+    /// ⌥⌘1…9: the Nth tab from the left, whatever tmux's base-index.
+    @objc func selectTabByTag(_ sender: NSMenuItem) {
+        guard let windows = selectedSession?.windows, windows.indices.contains(sender.tag - 1) else { return }
+        selectWindow(windows[sender.tag - 1])
+    }
+
+    private var currentWindow: TmuxWindow? {
+        selectedSession?.windows.first(where: \.isActive)
+    }
+
+    private func stepWindow(_ delta: Int) {
+        guard let windows = selectedSession?.windows, !windows.isEmpty else { return }
+        let current = windows.firstIndex(where: \.isActive) ?? 0
+        selectWindow(windows[(current + delta + windows.count) % windows.count])
+    }
+
     private func selectWindow(_ tmuxWindow: TmuxWindow) {
         guard let sessionID = store.selectedID else { return }
         store.selectWindow(tmuxWindow.id, in: sessionID)

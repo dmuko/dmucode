@@ -35,7 +35,7 @@ struct TabBarView: View {
             }
             .buttonStyle(.borderless)
             .focusable(false)
-            .help("New tmux window")
+            .help("New tmux window (⌘T)")
             .padding(.trailing, 6)
         }
         .frame(height: Self.height)
