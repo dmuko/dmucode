@@ -60,6 +60,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.setContentSize(NSSize(width: 1100, height: 700))
 
         terminals.onTerminalClosed = { [weak self] in self?.store.refresh() }
+        terminals.onAlert = { [weak self] sessionID, message in
+            guard let self else { return }
+            // Nothing to point at if the user is looking at that session.
+            if sessionID == self.store.selectedID, self.isWatching { return }
+            self.store.raiseAlert(sessionID: sessionID, message: message)
+        }
+        // Showing a session is seeing its alert.
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in self?.clearSelectedAlert() }
+            .store(in: &cancellables)
+        store.$alerts.combineLatest(store.$sessions)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _, _ in self?.updateDockBadge() }
+            .store(in: &cancellables)
         terminals.onReattach = { [weak self] in self?.showSelected() }
 
         // Switching sessions inside tmux (prefix s, switch-client) moves the
@@ -120,12 +134,33 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         GhosttyRuntime.shared.setBackgroundBlur(window)
     }
 
+    func windowDidBecomeKey(_ notification: Notification) {
+        clearSelectedAlert()
+    }
+
+    /// The window is in front of the user, so the shown session is seen.
+    private var isWatching: Bool {
+        NSApp.isActive && window?.isKeyWindow == true && window?.isMiniaturized == false
+    }
+
+    private func clearSelectedAlert() {
+        guard let id = store.selectedID, isWatching else { return }
+        store.clearAlert(sessionID: id)
+    }
+
+    /// The number of sessions that want attention, on the Dock icon.
+    private func updateDockBadge() {
+        let count = store.sessions.filter { store.needsAttention($0) }.count
+        NSApp.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
+    }
+
     private func showSelected() {
         let emptyText = store.isRestoring ? "Restoring tmux sessions…"
             : store.sessions.isEmpty ? "No tmux sessions.\nPress ⌘N to create one."
             : "Select a session"
         terminals.show(sessionID: store.selectedID, emptyText: emptyText)
         updateTitle()
+        clearSelectedAlert()
     }
 
     private func updateTitle() {
@@ -290,6 +325,8 @@ final class TerminalContainerController: NSViewController {
 
     var onTerminalClosed: (() -> Void)?
     var onReattach: (() -> Void)?
+    /// A terminal rang the bell (nil) or posted a notification (its text).
+    var onAlert: ((_ sessionID: String, _ message: String?) -> Void)?
 
     init(tmux: Tmux, tabBar: NSView) {
         self.tmux = tmux
@@ -351,6 +388,11 @@ final class TerminalContainerController: NSViewController {
             created.frame = terminalFrame
             created.onClose = { [weak self, weak created] in
                 if let created { self?.terminalClosed(created) }
+            }
+            created.onAlert = { [weak self, weak created] message in
+                // Looked up now: the terminal may have moved to another session.
+                guard let self, let id = self.views.first(where: { $0.value === created })?.key else { return }
+                self.onAlert?(id, message)
             }
             view.addSubview(created)
             views[sessionID] = created

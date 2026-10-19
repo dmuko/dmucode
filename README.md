@@ -4,6 +4,7 @@ Minimaalinen macOS-prototyyppi:
 
 - Vasemmassa sivupalkissa näkyvät tmux-palvelimen sessiot. Lista päivittyy tapahtumista tmuxin control mode -yhteyden kautta.
 - Kun klikkaat sessiota, oikealle avautuu Ghostty-terminaali (GhosttyKit), jossa ajetaan `tmux attach-session -t <id>`.
+- Sivupalkki merkitsee kellolla session, jossa soi bell tai joka lähetti ilmoituksen (esim. Claude Code odottaa vastausta). Ilmoituksen teksti näkyy session alla.
 - Session tmux-ikkunat näkyvät tabeina terminaalin yläpuolella. Tabissa näkyy aktiivisen panen hakemisto ja, jos hakemisto on git-repossa, haara ja tila.
 - Splitit ja muun hoitaa tmux itse.
 
@@ -43,6 +44,8 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 
 Ghostty-asetukset (fontti, teema) luetaan tiedostosta `~/.config/ghostty/config`.
 
+Claude Code -ilmoituksia varten lisää tiedostoon `~/.claude/settings.json` jokaisella koneella rivi `"preferredNotifChannel": "iterm2_with_bell"`. Silloin sivupalkin kello syttyy kaikissa sessioissa ja ikkunoissa, ja ilmoituksen teksti näkyy session alla (ks. [Control mode -yhteys](#control-mode--yhteys)).
+
 Ympäristömuuttujat:
 
 - `DMUCODE_TMUX_SOCKET=nimi` käyttää erillistä tmux-palvelinta (`tmux -L nimi`). Hyödyllinen testaukseen, ettei oikeisiin sessioihin kosketa.
@@ -63,12 +66,17 @@ Ympäristömuuttujat:
 
 ## Control mode -yhteys
 
-Sovellus pitää yllä yhtä `tmux -C attach-session` -clientia ([TmuxControlClient.swift](Sources/dmucode/TmuxControlClient.swift)) ja kuuntelee sen ilmoituksia: `%sessions-changed`, `%session-renamed`, `%window-add`/`-close`/`-renamed`, `%unlinked-window-*`, `%session-window-changed`, `%client-session-changed` ja `%client-detached`. Jokainen ilmoitus käynnistää uuden kyselyn (`list-sessions` + `list-windows -a` + `list-clients`) samaa yhteyttä pitkin. Saman purskeen ilmoitukset niputetaan 50 ms:n sisällä.
+Sovellus pitää yllä yhtä `tmux -C attach-session` -clientia ([TmuxControlClient.swift](Sources/dmucode/TmuxControlClient.swift)) ja kuuntelee sen ilmoituksia: `%sessions-changed`, `%session-renamed`, `%window-add`/`-close`/`-renamed`, `%unlinked-window-*`, `%session-window-changed`, `%subscription-changed`, `%client-session-changed` ja `%client-detached`. Jokainen ilmoitus käynnistää uuden kyselyn (`list-sessions` + `list-windows -a` + `list-clients`) samaa yhteyttä pitkin. Saman purskeen ilmoitukset niputetaan 50 ms:n sisällä.
 
 - **Liputukset:** client asettaa `no-output` (panejen tuloste ei virtaa sovellukseen), `ignore-size` (ei vaikuta ikkunoiden kokoon) ja `no-detach-on-destroy` (jos sen oma sessio tapetaan, se siirtyy toiseen sessioon eikä katkea).
 - **Ilman sessioita:** control-clientin on pakko liittyä johonkin sessioon. Kun palvelinta tai sessioita ei ole, sovellus pollaa CLI:tä kerran sekunnissa ja yhdistää heti, kun sessio ilmestyy. Sivupalkin otsikon vihreä pallo tarkoittaa tapahtumapohjaista tilaa, harmaa pollausta.
 - **Session vaihto tmuxin sisällä:** `%client-session-changed` kertoo clientin tty:n. Jos se on jonkin terminaalin tty (`ghostty_surface_tty_name`), terminaali siirretään uuden session alle ja sivupalkki seuraa (`prefix s`, `switch-client`).
 - **Tabien hakemisto ja git:** `cd` ei tuota ilmoitusta, joten client tilaa tmuxilta formaatin (`refresh-client -B`), joka sisältää jokaisen ikkunan `pane_current_path`in kaikista sessioista. tmux tarkistaa tilauksen noin kerran sekunnissa ja lähettää muutoksesta `%subscription-changed`-ilmoituksen. Valitun session hakemistoille ajetaan `git --no-optional-locks status --porcelain=v2 --branch` heti, kun hakemistot muuttuvat, ja sen jälkeen 3 sekunnin välein, koska tiedostojen muokkauksesta ei tule tapahtumaa. Tabissa näkyy haara (irrotetussa tilassa commit), oranssi pallo jos muutoksia on, punainen kolmio jos konflikteja on, ja ↑/↓ ahead/behind-luvuille. Tooltipissa on koko polku ja muutosten määrät.
+- **Huomiomerkit:** merkillä on kaksi lähdettä.
+  - **dmucoden omat terminaalit:** libghostty kertoo bellistä (`RING_BELL`) ja työpöytäilmoituksesta (`DESKTOP_NOTIFICATION`, OSC 9 tai OSC 777). tmux välittää session minkä tahansa ikkunan bellin sen clienteille, mutta OSC-ilmoitukset kulkevat tmuxin passthroughin kautta vain, kun pane on session nykyisessä ikkunassa. `allow-passthrough all` ei auta, koska tmux kirjoittaa passthroughin vain clienteille, jotka näyttävät panen. Merkki poistuu, kun sessio on valittuna ja dmucode on edessä. Jos käyttäjä katsoo jo sessiota, merkkiä ei tule.
+  - **tmuxin liput:** `window_bell_flag` ja `window_activity_flag` (jälkimmäinen vain `monitor-activity on`:lla) tulevat samassa tilauksessa kuin polut. Ne kattavat sessiot, joille dmucodessa ei ole terminaalia, sekä muut kuin nykyiset ikkunat. tmux nollaa ne, kun ikkuna valitaan tai sessioon liitytään.
+  - **Dockin ikoni** näyttää huomiota haluavien sessioiden määrän.
+- **Claude Code:** oletusasetuksella (`auto`) Claude Code tunnistaa Ghosttyn tmuxin sisältä `TERM=xterm-ghostty`:stä (tmuxin `default-terminal`). Silloin se lähettää OSC 777 -ilmoituksen tmux-passthroughilla (`allow-passthrough on` tarvitaan). Tämä tavoittaa dmucoden vain, kun Claude on session nykyisessä ikkunassa ja sessio on avattu dmucodessa. Kattavampi asetus on `preferredNotifChannel: iterm2_with_bell`: se lähettää OSC 9 -ilmoituksen (teksti) ja bellin, ja bell näkyy tmuxin lipuista myös avaamattomissa sessioissa ja muissa ikkunoissa.
 - **Tabit:** tabit ovat valitun session ikkunat `list-windows -a`:sta. Tabin klikkaus ajaa `select-window -t $session:@ikkuna`, ja tabi vaihtuu heti. Kun ikkunaa vaihdetaan tmuxin sisällä (`prefix n`, `prefix 3`…), `%session-window-changed` siirtää korostuksen. Ikkunan valinta vaikuttaa kaikkiin samaan sessioon liitettyihin clienteihin, kuten tmuxissa muutenkin.
 - **Sivuvaikutus:** control-client näkyy tmuxissa liitettynä clientina. `tmux ls` merkitsee yhden session "(attached)":ksi, ja tmux-konfiguraation `client-attached`-hookit ajetaan. Sivupalkin "attached"-laskuri ei laske control-clienteja.
 

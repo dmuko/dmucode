@@ -62,6 +62,15 @@ private struct WindowTab: View {
         HStack(spacing: 5) {
             Text("\(window.index)")
                 .foregroundStyle(.secondary)
+            if window.hasBell {
+                Image(systemName: "bell.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+            } else if window.hasActivity {
+                Circle()
+                    .fill(.secondary)
+                    .frame(width: 5, height: 5)
+            }
             Text(window.name)
                 .lineLimit(1)
             if !window.path.isEmpty {

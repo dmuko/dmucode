@@ -12,7 +12,8 @@ struct SidebarView: View {
             List(selection: $store.selectedID) {
                 Section {
                     ForEach(Array(store.sessions.enumerated()), id: \.element.id) { index, session in
-                        SessionRow(session: session, shortcut: index < 9 ? index + 1 : nil)
+                        SessionRow(session: session, alert: store.alerts[session.id],
+                                   shortcut: index < 9 ? index + 1 : nil)
                             .tag(session.id)
                             .contextMenu {
                                 Button("Rename…") { onRename(session) }
@@ -62,20 +63,41 @@ struct SidebarView: View {
 
 private struct SessionRow: View {
     let session: TmuxSession
+    let alert: TerminalAlert?
     let shortcut: Int?
+
+    private var wantsAttention: Bool { alert != nil || session.hasBell }
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "terminal")
-                .foregroundStyle(.secondary)
+            // A bell or a notification (e.g. Claude Code waiting for input)
+            // in a session the user isn't looking at.
+            Image(systemName: wantsAttention ? "bell.fill" : "terminal")
+                .foregroundStyle(wantsAttention ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(session.name)
                     .lineLimit(1)
-                Text(session.windows.count == 1 ? "1 window" : "\(session.windows.count) windows")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .fontWeight(wantsAttention ? .semibold : .regular)
+                if let message = alert?.message, !message.isEmpty {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .lineLimit(2)
+                        .help(message)
+                } else {
+                    Text(session.windows.count == 1 ? "1 window" : "\(session.windows.count) windows")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 4)
+            if !wantsAttention && session.hasActivity {
+                Circle()
+                    .fill(.secondary)
+                    .frame(width: 6, height: 6)
+                    .help("Activity in a window (monitor-activity)")
+            }
             if session.attachedClients > 0 {
                 Circle()
                     .fill(.green)

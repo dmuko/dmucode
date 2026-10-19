@@ -12,6 +12,9 @@ final class TerminalView: NSView, NSTextInputClient {
 
     /// Called on the main thread when the surface's process has exited.
     var onClose: (() -> Void)?
+    /// Called on the main thread on a bell (nil) or a desktop notification
+    /// (its text).
+    var onAlert: ((_ message: String?) -> Void)?
 
     private var markedText = NSMutableAttributedString()
     /// Non-nil only while inside keyDown; collects text committed by the input system.

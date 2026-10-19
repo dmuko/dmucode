@@ -28,6 +28,10 @@ final class SessionStore: ObservableObject {
     @Published private(set) var isLive = false
     /// True while tmux-continuum restores sessions after we started the server.
     @Published private(set) var isRestoring = false
+    /// Sessions that want attention according to our own terminals: a bell,
+    /// or a desktop notification such as Claude Code waiting for input
+    /// (its text, if any). tmux's own bell flags are on the windows.
+    @Published private(set) var alerts: [String: TerminalAlert] = [:]
 
     /// A tmux client moved to another session (prefix s, switch-client...):
     /// the client's tty and the new session id.
@@ -149,6 +153,21 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    // MARK: Attention
+
+    func raiseAlert(sessionID: String, message: String?) {
+        // A bell right after a notification keeps the notification's text.
+        alerts[sessionID] = TerminalAlert(message: message ?? alerts[sessionID]?.message)
+    }
+
+    func clearAlert(sessionID: String) {
+        if alerts[sessionID] != nil { alerts[sessionID] = nil }
+    }
+
+    func needsAttention(_ session: TmuxSession) -> Bool {
+        alerts[session.id] != nil || session.hasBell
+    }
+
     // MARK: Windows
 
     /// Makes a window the session's current one. The tab moves right away;
@@ -236,6 +255,8 @@ final class SessionStore: ObservableObject {
                 }
             }
             if sessions != self.sessions { self.sessions = sessions }
+            let ids = Set(sessions.map(\.id))
+            if alerts.keys.contains(where: { !ids.contains($0) }) { alerts = alerts.filter { ids.contains($0.key) } }
             fixSelection()
         case .failure(let error):
             errorMessage = "\(error)"
@@ -258,4 +279,9 @@ final class SessionStore: ObservableObject {
         selectingAutomatically = false
         selectionIsAutomatic = true
     }
+}
+
+struct TerminalAlert: Equatable {
+    /// A desktop notification's text; nil for a plain bell.
+    var message: String?
 }
