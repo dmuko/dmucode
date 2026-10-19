@@ -14,6 +14,7 @@ import IOSurface
 ///   select N        select the Nth session in the sidebar
 ///   tab N           select the Nth window tab of the selected session
 ///   newtab          open a new window in the selected session (the + button)
+///   reload          reload the Ghostty config (state shows the theme and errors)
 ///   move FROM TO    drag sidebar row FROM (0-based) to before row TO, as onMove does
 ///   group NAME      create a group; ungroup NAME removes it
 ///   togroup S G     move session S into group G ("-": out of its group)
@@ -60,6 +61,7 @@ enum DebugHooks {
             if let controller = window.windowController as? MainWindowController {
                 lines.append(controller.commandBarState)
                 lines.append(controller.switcherState)
+                lines.append(controller.themeState)
             }
             lines.append("firstResponder=\(window.firstResponder.map { String(describing: type(of: $0)) } ?? "-")")
             let rows = store.sidebarRows.map { row -> String in
@@ -101,6 +103,8 @@ enum DebugHooks {
             if let n = Int(arg), let session = store.selectedSession, session.windows.indices.contains(n - 1) {
                 store.selectWindow(session.windows[n - 1].id, in: session.id)
             }
+        case "reload":
+            GhosttyRuntime.shared.reloadConfig()
         case "move":
             let n = arg.split(separator: " ").compactMap { Int($0) }
             if n.count == 2 { store.moveSidebarRow(from: n[0], to: n[1]) }

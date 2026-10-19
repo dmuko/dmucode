@@ -50,7 +50,13 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 
 Sivupalkin järjestys ja ryhmät muistetaan session nimen perusteella ([SidebarLayout.swift](Sources/dmucode/SidebarLayout.swift)). Jos sessio tapetaan ja samanniminen luodaan myöhemmin, esimerkiksi rebootin jälkeen, se palaa samaan kohtaan ja samaan ryhmään. Uusi nimi tulee ryhmättömien sessioiden loppuun. Kun sessio nimetään uudelleen, se pysyy paikallaan. Ryhmän voi raahata otsikosta, jolloin ryhmän sessiot tulevat mukana. Ryhmä asettuu aina ryhmien väliin, koska ryhmättömät sessiot ovat ylimpänä. Järjestys tallennetaan tmux-socketeittain sovelluksen asetuksiin.
 
-Ghostty-asetukset (fontti, teema) luetaan tiedostosta `~/.config/ghostty/config`.
+Ghostty-asetukset (fontti, teema) luetaan tiedostosta `~/.config/ghostty/config`. Konfiguraatio latautuu uudelleen ilman sovelluksen uudelleenkäynnistystä kolmella tavalla:
+
+- **Tallennus:** kun `config`, `config.ghostty` tai tiedosto `themes/`-hakemistossa tallennetaan hakemistoon `~/.config/ghostty` (tai `$XDG_CONFIG_HOME/ghostty`) tai `~/Library/Application Support/com.mitchellh.ghostty` ([ConfigWatcher.swift](Sources/dmucode/ConfigWatcher.swift)). Muualta `config-file`-rivillä tuotuja tiedostoja ei seurata.
+- **⌘⇧,** (dmucode → Reload Ghostty Config).
+- **Ghosttyn oma `reload_config`-pikanäppäin.**
+
+Terminaalit, sivupalkki, otsikko- ja tabipalkki sekä ikkunan tausta saavat uudet värit, ja ikkunan ulkoasu (tumma tai vaalea) seuraa taustaväriä. Jos konfiguraatiossa on virheitä, libghostty ohittaa virheelliset rivit ja ottaa muut käyttöön kuten Ghostty. dmucode näyttää ohitetut rivit ikkunan päälle avautuvassa ilmoituksessa.
 
 Claude Code -ilmoituksia varten lisää tiedostoon `~/.claude/settings.json` jokaisella koneella rivi `"preferredNotifChannel": "iterm2_with_bell"`. Silloin sivupalkin kello syttyy kaikissa sessioissa ja ikkunoissa, ja ilmoituksen teksti näkyy session alla (ks. [Control mode -yhteys](#control-mode--yhteys)).
 
@@ -59,7 +65,7 @@ Ympäristömuuttujat:
 - `DMUCODE_TMUX_SOCKET=nimi` käyttää erillistä tmux-palvelinta (`tmux -L nimi`). Hyödyllinen testaukseen, ettei oikeisiin sessioihin kosketa.
 - `DMUCODE_TMUX=/polku/tmux` ohittaa tmuxin automaattisen etsinnän.
 - `DMUCODE_RESURRECT_DIR=hakemisto` vaihtaa hakemiston, josta tmux-resurrectin tallennusta etsitään (testejä varten).
-- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `key`, `press`, `select`, `move`, `group`, `ungroup`, `togroup`, `tab`, `newtab`, `cmdbar`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
+- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `key`, `press`, `reload`, `select`, `move`, `group`, `ungroup`, `togroup`, `tab`, `newtab`, `cmdbar`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
 
 ## Rakenne
 
