@@ -325,6 +325,9 @@ struct TerminalTheme: Equatable {
     /// Chrome (title bar, sidebar) background, as translucent as the terminals.
     var chromeBackground: NSColor { background.withAlphaComponent(opacity) }
 
+    /// The same colors without translucency.
+    var opaque: TerminalTheme { TerminalTheme(background: background, foreground: foreground, opacity: 1) }
+
     /// Dark or light system appearance, so text and controls stay readable.
     var appearance: NSAppearance? {
         let c = background.usingColorSpace(.sRGB) ?? background

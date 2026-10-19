@@ -11,6 +11,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let git = GitStatusStore()
     private let commandBar = CommandBarModel()
     private let switcher: SessionSwitcherModel
+    private let chrome = ChromeTheme(GhosttyRuntime.shared.theme)
     private let terminals: TerminalContainerController
     private var cancellables: Set<AnyCancellable> = []
 
@@ -18,11 +19,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         self.store = store
         self.switcher = SessionSwitcherModel(store: store)
         let theme = GhosttyRuntime.shared.theme
-        let git = self.git, commandBar = self.commandBar, switcher = self.switcher
+        let git = self.git, commandBar = self.commandBar, switcher = self.switcher, chrome = self.chrome
         // The real actions need self; set below.
-        let tabBar = NSHostingView(rootView: Themed { TabBarView(
+        let tabBar = NSHostingView(rootView: Themed(chrome) { TabBarView(
             store: store, git: git, theme: $0, onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }) })
-        let overlay = NSHostingView(rootView: Themed {
+        let overlay = NSHostingView(rootView: Themed(chrome) {
             PaletteOverlay(commandBar: commandBar, switcher: switcher, store: store, theme: $0) })
         self.terminals = TerminalContainerController(tmux: store.tmux, tabBar: tabBar, overlay: overlay)
 
@@ -41,7 +42,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
-        tabBar.rootView = Themed { [weak self] theme in TabBarView(
+        tabBar.rootView = Themed(chrome) { [weak self] theme in TabBarView(
             store: store,
             git: git,
             theme: theme,
@@ -51,7 +52,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             onClose: { self?.closeWindow($0) }) }
 
         let split = NSSplitViewController()
-        let sidebar = NSHostingController(rootView: Themed { [weak self] theme in SidebarView(
+        let sidebar = NSHostingController(rootView: Themed(chrome) { [weak self] theme in SidebarView(
             store: store,
             theme: theme,
             onNew: { self?.newSession(nil) },
@@ -131,11 +132,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
             .store(in: &cancellables)
         // A reloaded Ghostty config: the terminals update themselves, the
-        // SwiftUI chrome through Themed, the AppKit parts here.
+        // chrome here (see updateChrome).
         GhosttyRuntime.shared.$theme
             .dropFirst()
             .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.applyTheme($0) }
+            .sink { [weak self] _ in self?.updateChrome() }
             .store(in: &cancellables)
         GhosttyRuntime.shared.$configErrors
             .receive(on: RunLoop.main)
@@ -147,14 +148,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
-        applyWindowBackground(GhosttyRuntime.shared.theme)
+        applyWindowBackground(chrome.theme)
         showConfigErrors(GhosttyRuntime.shared.configErrors)
     }
 
     /// Like Ghostty's own app: with background-opacity < 1 the window must be
     /// see-through, or the terminal's translucent background is composited
     /// over an opaque window. Blur only takes effect once the window is
-    /// visible. (Ghostty also turns this off in native fullscreen; not yet.)
+    /// visible.
     private func applyWindowBackground(_ theme: TerminalTheme) {
         guard let window else { return }
         guard theme.isTranslucent else {
@@ -168,7 +169,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         GhosttyRuntime.shared.setBackgroundBlur(window)
     }
 
-    private func applyTheme(_ theme: TerminalTheme) {
+    /// Applies the config's theme to the chrome, opaque in native fullscreen
+    /// as in Ghostty: behind the window there is only the Space's gray
+    /// background, which the sidebar's material and any translucency would
+    /// show. The terminals stay as configured, now on an opaque backdrop of
+    /// the same color, so they look opaque too.
+    private func updateChrome() {
+        let config = GhosttyRuntime.shared.theme
+        let theme = window?.styleMask.contains(.fullScreen) == true ? config.opaque : config
+        if chrome.theme != theme { chrome.theme = theme }
         window?.appearance = theme.appearance
         applyWindowBackground(theme)
         terminals.applyTheme(theme)
@@ -209,10 +218,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             return String(format: "#%02x%02x%02x", Int(round(c.redComponent * 255)),
                           Int(round(c.greenComponent * 255)), Int(round(c.blueComponent * 255)))
         }
-        return "theme=\(hex(theme.background))/\(hex(theme.foreground)) opacity=\(theme.opacity)"
+        let effects = (window?.contentView?.superview ?? window?.contentView).map(Self.effectViews) ?? []
+        return "theme=\(hex(theme.background))/\(hex(theme.foreground)) opacity=\(theme.opacity) chrome-opacity=\(chrome.theme.opacity)"
+            + " window: opaque=\(window?.isOpaque ?? false) bg=\(window?.backgroundColor.map(hex) ?? "-")"
+            + " fullscreen=\(window?.styleMask.contains(.fullScreen) ?? false)"
+            + " effectViews=[\(effects.joined(separator: ","))]"
             + " appearance=\(window?.appearance?.name.rawValue ?? "-")"
             + " errors=\(GhosttyRuntime.shared.configErrors.count) sheet=\(window?.attachedSheet != nil)"
     }
+
+    private static func effectViews(in view: NSView) -> [String] {
+        var found: [String] = []
+        if let effect = view as? NSVisualEffectView {
+            found.append("\(effect.material.rawValue)/\(effect.blendingMode == .behindWindow ? "behind" : "within")/\(effect.state.rawValue)")
+        }
+        return found + view.subviews.flatMap(effectViews)
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) { updateChrome() }
+    func windowDidExitFullScreen(_ notification: Notification) { updateChrome() }
 
     func windowDidBecomeKey(_ notification: Notification) {
         clearSelectedAlert()
@@ -666,15 +690,26 @@ final class TerminalContainerController: NSViewController {
     }
 }
 
-/// Renders its content with the current terminal theme, again whenever a
-/// reloaded Ghostty config changes it.
+/// The theme the window chrome is drawn with: the Ghostty config's, made
+/// opaque in native fullscreen (MainWindowController.updateChrome).
+final class ChromeTheme: ObservableObject {
+    @Published var theme: TerminalTheme
+
+    init(_ theme: TerminalTheme) {
+        self.theme = theme
+    }
+}
+
+/// Renders its content with the chrome's theme, again whenever it changes
+/// (a reloaded Ghostty config, entering or leaving fullscreen).
 struct Themed<Content: View>: View {
-    @ObservedObject private var runtime = GhosttyRuntime.shared
+    @ObservedObject private var chrome: ChromeTheme
     private let content: (TerminalTheme) -> Content
 
-    init(@ViewBuilder _ content: @escaping (TerminalTheme) -> Content) {
+    init(_ chrome: ChromeTheme, @ViewBuilder _ content: @escaping (TerminalTheme) -> Content) {
+        self.chrome = chrome
         self.content = content
     }
 
-    var body: some View { content(runtime.theme) }
+    var body: some View { content(chrome.theme) }
 }
