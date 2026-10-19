@@ -5,7 +5,7 @@ import os
 /// notifications and queries, never for pane output. The protocol itself is
 /// in ControlModeParser.
 ///
-/// Connection events go to the unified log (subsystem dev.dmucode.app,
+/// Connection events go to the unified log (subsystem com.dmuko.dmucode,
 /// category control), notifications and commands at debug level.
 final class TmuxControlClient {
     /// A notification's name (e.g. "%sessions-changed") and arguments. Main thread.
@@ -14,7 +14,7 @@ final class TmuxControlClient {
     /// reply came (see `checkHeartbeat`). Main thread.
     var onExit: (() -> Void)?
 
-    static let log = Logger(subsystem: "dev.dmucode.app", category: "control")
+    static let log = Logger(subsystem: "com.dmuko.dmucode", category: "control")
 
     /// A stalled connection never closes, so exit and EOF can't reveal it; a
     /// command without a reply can. Every interval, give up if the oldest

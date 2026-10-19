@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before anything reads the settings (the store, the window frame).
+        if let id = Bundle.main.bundleIdentifier { DefaultsMigration.run(into: id) }
         NSApp.mainMenu = makeMainMenu()
 
         guard let tmux = Tmux.resolve() else {
