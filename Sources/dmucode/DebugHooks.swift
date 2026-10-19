@@ -70,7 +70,9 @@ enum DebugHooks {
             let rows = store.sidebarRows.map { row -> String in
                 switch row {
                 case .group(let name): return "#" + name
-                case .session(let session): return session.name
+                case .session(let session):
+                    let shown = store.layout.displayName(ofSession: session.name)
+                    return session.name + (shown == session.name ? "" : "=" + shown)
                 }
             }
             lines.append("rows=[\(rows.joined(separator: ","))]")

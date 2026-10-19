@@ -50,7 +50,9 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 | ⌥⌘1…⌥⌘9 | hyppää tabiin (järjestysnumero vasemmalta, ei tmuxin indeksi) |
 | tabin oikea klikkaus | Rename / Close Window |
 
-Sivupalkin järjestys ja ryhmät muistetaan session nimen perusteella ([SidebarLayout.swift](Sources/dmucode/SidebarLayout.swift)). Jos sessio tapetaan ja samanniminen luodaan myöhemmin, esimerkiksi rebootin jälkeen, se palaa samaan kohtaan ja samaan ryhmään. Uusi nimi tulee ryhmättömien sessioiden loppuun. Kun sessio nimetään uudelleen, se pysyy paikallaan. Ryhmän voi raahata otsikosta, jolloin ryhmän sessiot tulevat mukana. Ryhmä asettuu aina ryhmien väliin, koska ryhmättömät sessiot ovat ylimpänä. Järjestys tallennetaan tmux-socketeittain sovelluksen asetuksiin.
+Sivupalkin järjestys ja ryhmät muistetaan session nimen perusteella ([SidebarLayout.swift](Sources/dmucode/SidebarLayout.swift)). Jos sessio tapetaan ja samanniminen luodaan myöhemmin, esimerkiksi rebootin jälkeen, se palaa samaan kohtaan ja samaan ryhmään. Uusi nimi tulee ryhmättömien sessioiden loppuun. Kun sessio nimetään uudelleen, se pysyy paikallaan.
+
+Muotoa `ryhmä/nimi` oleva sessio ryhmittyy itse. Kun nimi nähdään ensimmäistä kertaa, sessio menee ryhmän `ryhmä` loppuun (ryhmä luodaan tarvittaessa) ja näkyy siellä nimellä `nimi`. Esimerkiksi `tmux new -s agents/claude-1` ilmestyy agents-ryhmään nimellä `claude-1`. Jos session nimeää uudelleen uudella etuliitteellä, se siirtyy kyseiseen ryhmään. Jos etuliitteen poistaa, sessio siirtyy pois ryhmästä. Muuten sessiota voi raahata vapaasti. Muualle raahattuna se näkyy koko nimellään. Ryhmän voi raahata otsikosta, jolloin ryhmän sessiot tulevat mukana. Ryhmä asettuu aina ryhmien väliin, koska ryhmättömät sessiot ovat ylimpänä. Järjestys tallennetaan tmux-socketeittain sovelluksen asetuksiin.
 
 Ghostty-asetukset (fontti, teema) luetaan tiedostosta `~/.config/ghostty/config`. Konfiguraatio latautuu uudelleen ilman sovelluksen uudelleenkäynnistystä kolmella tavalla:
 

@@ -28,8 +28,8 @@ struct SidebarView: View {
                                     Button("Remove Group") { store.removeGroup(name) }
                                 }
                         case .session(let session):
-                            SessionRow(session: session, alert: store.alerts[session.id],
-                                       shortcut: shortcuts[session.id])
+                            SessionRow(session: session, name: store.layout.displayName(ofSession: session.name),
+                                       alert: store.alerts[session.id], shortcut: shortcuts[session.id])
                                 .tag(session.id)
                                 .contextMenu { sessionMenu(session) }
                         }
@@ -118,6 +118,8 @@ private struct GroupHeader: View {
 
 private struct SessionRow: View {
     let session: TmuxSession
+    /// Without the "group/" prefix when under that group.
+    let name: String
     let alert: TerminalAlert?
     let shortcut: Int?
 
@@ -131,9 +133,10 @@ private struct SessionRow: View {
                 .foregroundStyle(wantsAttention ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
-                Text(session.name)
+                Text(name)
                     .lineLimit(1)
                     .fontWeight(wantsAttention ? .semibold : .regular)
+                    .help(session.name)
                 if let message = alert?.message, !message.isEmpty {
                     Text(message)
                         .font(.caption)
