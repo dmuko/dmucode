@@ -55,7 +55,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             theme: theme,
             onNew: { [weak self] in self?.newSession(nil) },
             onRename: { [weak self] in self?.rename($0) },
-            onKill: { [weak self] in self?.kill($0) }))
+            onKill: { [weak self] in self?.kill($0) },
+            onNewGroup: { [weak self] in self?.newGroup(moving: $0) },
+            onRenameGroup: { [weak self] in self?.renameGroup($0) }))
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 360
@@ -233,6 +235,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         guard let name = prompt(title: "Rename session", message: "New name for “\(session.name)”:", value: session.name),
               !name.isEmpty, name != session.name else { return }
         store.perform { tmux in try tmux.renameSession(id: session.id, to: name) }
+    }
+
+    private func newGroup(moving session: TmuxSession?) {
+        guard let name = prompt(title: "New group", message: "Name for the group:", value: ""),
+              !name.isEmpty else { return }
+        if !store.addGroup(name, moving: session?.id) { NSSound.beep() }
+    }
+
+    private func renameGroup(_ group: String) {
+        guard let name = prompt(title: "Rename group", message: "New name for “\(group)”:", value: group),
+              !name.isEmpty, name != group else { return }
+        if !store.renameGroup(group, to: name) { NSSound.beep() }
     }
 
     private func kill(_ session: TmuxSession) {

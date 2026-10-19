@@ -14,6 +14,9 @@ import IOSurface
 ///   select N        select the Nth session in the sidebar
 ///   tab N           select the Nth window tab of the selected session
 ///   newtab          open a new window in the selected session (the + button)
+///   move FROM TO    drag sidebar row FROM (0-based) to before row TO, as onMove does
+///   group NAME      create a group; ungroup NAME removes it
+///   togroup S G     move session S into group G ("-": out of its group)
 ///   cmdbar LINE     run LINE through the ⌘: command bar (state shows the result)
 ///   new NAME        create a session (as the New Session button does)
 ///   state NAME      write the sidebar state (live, selection, sessions) to NAME.txt
@@ -59,6 +62,13 @@ enum DebugHooks {
                 lines.append(controller.switcherState)
             }
             lines.append("firstResponder=\(window.firstResponder.map { String(describing: type(of: $0)) } ?? "-")")
+            let rows = store.sidebarRows.map { row -> String in
+                switch row {
+                case .group(let name): return "#" + name
+                case .session(let session): return session.name
+                }
+            }
+            lines.append("rows=[\(rows.joined(separator: ","))]")
             lines += store.sessions.map { session in
                 let windows = session.windows.map {
                     "\($0.id)\($0.isActive ? "*" : "")\($0.hasBell ? "!" : "")\($0.hasActivity ? "#" : ""):\($0.name)"
@@ -90,6 +100,18 @@ enum DebugHooks {
         case "tab":
             if let n = Int(arg), let session = store.selectedSession, session.windows.indices.contains(n - 1) {
                 store.selectWindow(session.windows[n - 1].id, in: session.id)
+            }
+        case "move":
+            let n = arg.split(separator: " ").compactMap { Int($0) }
+            if n.count == 2 { store.moveSidebarRow(from: n[0], to: n[1]) }
+        case "group":
+            store.addGroup(arg)
+        case "ungroup":
+            store.removeGroup(arg)
+        case "togroup":
+            let parts = arg.split(separator: " ", maxSplits: 1).map(String.init)
+            if parts.count == 2, let session = store.sessions.first(where: { $0.name == parts[0] }) {
+                store.setGroup(parts[1] == "-" ? nil : parts[1], forSession: session.id)
             }
         case "cmdbar":
             (window.windowController as? MainWindowController)?.runInCommandBar(arg)

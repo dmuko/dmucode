@@ -29,13 +29,15 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 | | |
 |---|---|
 | ⌘N | uusi sessio |
-| ⌘1…⌘9 | hyppää sessioon |
+| ⌘1…⌘9 | hyppää sessioon (sivupalkin järjestyksessä) |
 | ⌘↓ / ⌘↑ | seuraava / edellinen sessio |
 | ⌘R | nimeä sessio uudelleen |
 | ⌃⌘S | näytä / piilota sivupalkki |
 | ⌘K | sessionvaihdin: sumea haku session nimestä tai ikkunan nimestä ja hakemistosta. Tyhjällä haulla viimeksi käytetty ensin, joten ⌘K ↩ palaa edelliseen sessioon. ⌘K korvaa Ghosttyn `clear_screen`-pikanäppäimen; tmuxissa ruudun tyhjentää `clear` tai C-l. |
 | ⌘: | tmux-komentopalkki (kuten `prefix :`) |
-| oikea klikkaus | Rename / Kill |
+| oikea klikkaus | Rename / Move to Group / Kill |
+| session raahaus | järjestä sivupalkki; raahaa ryhmän alle siirtääksesi ryhmään |
+| sivupalkin kansio-painike | uusi ryhmä (ryhmän oikea klikkaus: Rename / Remove) |
 | tabin klikkaus | valitse tmux-ikkuna |
 | ⌘T tai tabipalkin + | uusi tmux-ikkuna nykyisen panen hakemistoon |
 | ⌘W | sulje nykyinen tmux-ikkuna (kysyy ensin) |
@@ -43,6 +45,8 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 | ⌘→ / ⌘← | seuraava / edellinen tabi |
 | ⌥⌘1…⌥⌘9 | hyppää tabiin (järjestysnumero vasemmalta, ei tmuxin indeksi) |
 | tabin oikea klikkaus | Rename / Close Window |
+
+Sivupalkin järjestys ja ryhmät muistetaan session nimen perusteella ([SidebarLayout.swift](Sources/dmucode/SidebarLayout.swift)). Jos sessio tapetaan ja samanniminen luodaan myöhemmin, esimerkiksi rebootin jälkeen, se palaa samaan kohtaan ja samaan ryhmään. Uusi nimi tulee ryhmättömien sessioiden loppuun. Kun sessio nimetään uudelleen, se pysyy paikallaan. Ryhmän voi raahata otsikosta, jolloin ryhmän sessiot tulevat mukana. Ryhmä asettuu aina ryhmien väliin, koska ryhmättömät sessiot ovat ylimpänä. Järjestys tallennetaan tmux-socketeittain sovelluksen asetuksiin.
 
 Ghostty-asetukset (fontti, teema) luetaan tiedostosta `~/.config/ghostty/config`.
 
@@ -53,7 +57,7 @@ Ympäristömuuttujat:
 - `DMUCODE_TMUX_SOCKET=nimi` käyttää erillistä tmux-palvelinta (`tmux -L nimi`). Hyödyllinen testaukseen, ettei oikeisiin sessioihin kosketa.
 - `DMUCODE_TMUX=/polku/tmux` ohittaa tmuxin automaattisen etsinnän.
 - `DMUCODE_RESURRECT_DIR=hakemisto` vaihtaa hakemiston, josta tmux-resurrectin tallennusta etsitään (testejä varten).
-- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `key`, `press`, `select`, `tab`, `newtab`, `cmdbar`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
+- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `key`, `press`, `select`, `move`, `group`, `ungroup`, `togroup`, `tab`, `newtab`, `cmdbar`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
 
 ## Rakenne
 
@@ -64,6 +68,7 @@ Ympäristömuuttujat:
 - [TabBarView.swift](Sources/dmucode/TabBarView.swift): valitun session tmux-ikkunat tabeina.
 - [GitStatus.swift](Sources/dmucode/GitStatus.swift): tabien git-tila.
 - [CommandBar.swift](Sources/dmucode/CommandBar.swift): ⌘:-komentopalkki.
+- [SidebarLayout.swift](Sources/dmucode/SidebarLayout.swift): sivupalkin järjestys ja ryhmät session nimien mukaan.
 - [SessionSwitcher.swift](Sources/dmucode/SessionSwitcher.swift) ja [FuzzyMatch.swift](Sources/dmucode/FuzzyMatch.swift): ⌘K-sessionvaihdin ja sen sumea haku.
 - [GhosttyInput.swift](Sources/dmucode/GhosttyInput.swift): näppäinten muunnokset, sovitettu Ghosttyn macOS-sovelluksesta (MIT).
 - [scripts/make-icon.swift](scripts/make-icon.swift): piirtää sovelluksen ikonin (D ja C osittain päällekkäin) CoreGraphicsilla. Käytössä on paletti `mocha`. Ikoni luodaan uudelleen komennolla `swift scripts/make-icon.swift icns mocha Resources/AppIcon.icns`, ja kaikkien palettien vertailukuva komennolla `swift scripts/make-icon.swift preview build/icon-preview.png`.
