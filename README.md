@@ -33,6 +33,7 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 | ⌘↓ / ⌘↑ | seuraava / edellinen sessio |
 | ⌘R | nimeä sessio uudelleen |
 | ⌃⌘S | näytä / piilota sivupalkki |
+| ⌘K | sessionvaihdin: sumea haku session nimestä tai ikkunan nimestä ja hakemistosta. Tyhjällä haulla viimeksi käytetty ensin, joten ⌘K ↩ palaa edelliseen sessioon. ⌘K korvaa Ghosttyn `clear_screen`-pikanäppäimen; tmuxissa ruudun tyhjentää `clear` tai C-l. |
 | ⌘: | tmux-komentopalkki (kuten `prefix :`) |
 | oikea klikkaus | Rename / Kill |
 | tabin klikkaus | valitse tmux-ikkuna |
@@ -52,7 +53,7 @@ Ympäristömuuttujat:
 - `DMUCODE_TMUX_SOCKET=nimi` käyttää erillistä tmux-palvelinta (`tmux -L nimi`). Hyödyllinen testaukseen, ettei oikeisiin sessioihin kosketa.
 - `DMUCODE_TMUX=/polku/tmux` ohittaa tmuxin automaattisen etsinnän.
 - `DMUCODE_RESURRECT_DIR=hakemisto` vaihtaa hakemiston, josta tmux-resurrectin tallennusta etsitään (testejä varten).
-- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `key`, `select`, `tab`, `newtab`, `cmdbar`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
+- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `key`, `press`, `select`, `tab`, `newtab`, `cmdbar`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
 
 ## Rakenne
 
@@ -63,6 +64,7 @@ Ympäristömuuttujat:
 - [TabBarView.swift](Sources/dmucode/TabBarView.swift): valitun session tmux-ikkunat tabeina.
 - [GitStatus.swift](Sources/dmucode/GitStatus.swift): tabien git-tila.
 - [CommandBar.swift](Sources/dmucode/CommandBar.swift): ⌘:-komentopalkki.
+- [SessionSwitcher.swift](Sources/dmucode/SessionSwitcher.swift) ja [FuzzyMatch.swift](Sources/dmucode/FuzzyMatch.swift): ⌘K-sessionvaihdin ja sen sumea haku.
 - [GhosttyInput.swift](Sources/dmucode/GhosttyInput.swift): näppäinten muunnokset, sovitettu Ghosttyn macOS-sovelluksesta (MIT).
 - [scripts/make-icon.swift](scripts/make-icon.swift): piirtää sovelluksen ikonin (D ja C osittain päällekkäin) CoreGraphicsilla. Käytössä on paletti `mocha`. Ikoni luodaan uudelleen komennolla `swift scripts/make-icon.swift icns mocha Resources/AppIcon.icns`, ja kaikkien palettien vertailukuva komennolla `swift scripts/make-icon.swift preview build/icon-preview.png`.
 

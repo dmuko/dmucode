@@ -65,6 +65,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let session = NSMenu(title: "Session")
         // ⌘: (⌘⇧. on US and Finnish layouts), like tmux's prefix :.
         session.addItem(withTitle: "tmux Command…", action: #selector(MainWindowController.toggleCommandBar(_:)), keyEquivalent: ":")
+        // Takes ⌘K from Ghostty's clear_screen; in tmux, `clear` or C-l does that.
+        session.addItem(withTitle: "Switch to Session…", action: #selector(MainWindowController.toggleSwitcher(_:)), keyEquivalent: "k")
         session.addItem(.separator())
         session.addItem(withTitle: "New Session…", action: #selector(MainWindowController.newSession(_:)), keyEquivalent: "n")
         session.addItem(withTitle: "Rename Session…", action: #selector(MainWindowController.renameSelected(_:)), keyEquivalent: "r")

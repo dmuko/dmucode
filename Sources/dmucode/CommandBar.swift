@@ -195,20 +195,36 @@ struct CommandBarView: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(width: 600)
-        .background(Color(nsColor: theme.background))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color(nsColor: theme.foreground).opacity(0.15)))
-        .shadow(color: .black.opacity(0.35), radius: 16, y: 6)
-        // Room for the shadow inside the hosting view, which clips.
-        .padding(.horizontal, 24)
-        .padding(.bottom, 30)
+        .paletteChrome(theme: theme)
         // Only gains focus here; on close the terminal takes it back
-        // (TerminalContainerController.setCommandBarVisible).
+        // (TerminalContainerController.setOverlayVisible).
         .onChange(of: model.isOpen) { _, open in if open { focused = true } }
         .onAppear { focused = model.isOpen }
+    }
+}
+
+extension View {
+    /// The floating panel shared by the ⌘: command bar and the ⌘K switcher.
+    func paletteChrome(theme: TerminalTheme) -> some View {
+        frame(width: 600)
+            .background(Color(nsColor: theme.background))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(Color(nsColor: theme.foreground).opacity(0.15)))
+            .shadow(color: .black.opacity(0.35), radius: 16, y: 6)
+            // Room for the shadow inside the hosting view, which clips.
+            .padding(.horizontal, 24)
+            .padding(.bottom, 30)
+    }
+
+    /// A suggestion or result row, highlighted while selected.
+    func paletteRow(selected: Bool) -> some View {
+        padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(selected ? Color.accentColor.opacity(0.35) : .clear))
     }
 }
 
@@ -233,15 +249,11 @@ private struct SuggestionRow: View {
                 .truncationMode(.tail)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(selected ? Color.accentColor.opacity(0.35) : .clear))
+        .paletteRow(selected: selected)
     }
 }
 
-private extension Array {
+extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
