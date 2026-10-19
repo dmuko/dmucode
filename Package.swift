@@ -24,6 +24,12 @@ let package = Package(
                 .linkedFramework("UniformTypeIdentifiers"),
             ]
         ),
+        // `swift test`: the parsers and the sidebar layout, through
+        // @testable import of the app target.
+        .testTarget(
+            name: "dmucodeTests",
+            dependencies: ["dmucode"]
+        ),
     ],
     swiftLanguageModes: [.v5]
 )

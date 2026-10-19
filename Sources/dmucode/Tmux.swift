@@ -37,7 +37,7 @@ struct TmuxCommand {
     let usage: String
 }
 
-struct TmuxError: Error, CustomStringConvertible {
+struct TmuxError: Error, CustomStringConvertible, Equatable {
     let description: String
 }
 
