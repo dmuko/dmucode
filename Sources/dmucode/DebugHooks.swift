@@ -10,6 +10,7 @@ import IOSurface
 ///   type TEXT       synthesize key presses for TEXT ("\n" = Return)
 ///   ctrl LETTER     synthesize ctrl+LETTER (e.g. tmux prefix: ctrl b)
 ///   key MODS+KEY    run the menu item with that shortcut (e.g. key cmd+right)
+///   press KEY       synthesize up, down or escape
 ///   select N        select the Nth session in the sidebar
 ///   tab N           select the Nth window tab of the selected session
 ///   newtab          open a new window in the selected session (the + button)
@@ -45,13 +46,18 @@ enum DebugHooks {
             key(arg, flags: .control, window: window)
         case "key":
             shortcut(arg, window: window)
+        case "press":
+            press(arg, window: window)
         case "select":
             if let n = Int(arg), store.sessions.indices.contains(n - 1) {
                 store.selectedID = store.sessions[n - 1].id
             }
         case "state":
             var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque) restoring=\(store.isRestoring)"]
-            if let controller = window.windowController as? MainWindowController { lines.append(controller.commandBarState) }
+            if let controller = window.windowController as? MainWindowController {
+                lines.append(controller.commandBarState)
+                lines.append(controller.switcherState)
+            }
             lines.append("firstResponder=\(window.firstResponder.map { String(describing: type(of: $0)) } ?? "-")")
             lines += store.sessions.map { session in
                 let windows = session.windows.map {
@@ -126,6 +132,28 @@ enum DebugHooks {
                 windowNumber: window.windowNumber, context: nil,
                 characters: chars, charactersIgnoringModifiers: ch == "\n" ? "\r" : String(ch),
                 isARepeat: false, keyCode: code) else { continue }
+            window.sendEvent(event)
+        }
+    }
+
+    /// A key without text, sent to the first responder like a real press.
+    private static func press(_ name: String, window: NSWindow) {
+        let keys: [String: (code: UInt16, char: String, flags: NSEvent.ModifierFlags)] = [
+            "up": (126, String(UnicodeScalar(NSUpArrowFunctionKey)!), [.numericPad, .function]),
+            "down": (125, String(UnicodeScalar(NSDownArrowFunctionKey)!), [.numericPad, .function]),
+            "escape": (53, "\u{1b}", []),
+        ]
+        guard let key = keys[name] else {
+            NSLog("debug: unknown key %@", name)
+            return
+        }
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            guard let event = NSEvent.keyEvent(
+                with: type, location: .zero, modifierFlags: key.flags,
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil,
+                characters: key.char, charactersIgnoringModifiers: key.char,
+                isARepeat: false, keyCode: key.code) else { continue }
             window.sendEvent(event)
         }
     }

@@ -10,17 +10,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     let store: SessionStore
     private let git = GitStatusStore()
     private let commandBar = CommandBarModel()
+    private let switcher: SessionSwitcherModel
     private let terminals: TerminalContainerController
     private var cancellables: Set<AnyCancellable> = []
 
     init(store: SessionStore) {
         self.store = store
+        self.switcher = SessionSwitcherModel(store: store)
         let theme = GhosttyRuntime.shared.theme
         // The real actions need self; set below.
         let tabBar = NSHostingView(rootView: TabBarView(
             store: store, git: git, theme: theme, onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }))
-        let commandBarView = NSHostingView(rootView: CommandBarView(model: commandBar, theme: theme))
-        self.terminals = TerminalContainerController(tmux: store.tmux, tabBar: tabBar, commandBar: commandBarView)
+        let overlay = NSHostingView(rootView: PaletteOverlay(
+            commandBar: commandBar, switcher: switcher, store: store, theme: theme))
+        self.terminals = TerminalContainerController(tmux: store.tmux, tabBar: tabBar, overlay: overlay)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
@@ -69,7 +72,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
             self.store.runCommandLine(line, in: sessionID, done: done)
         }
-        commandBar.onClose = { [weak self] in self?.terminals.setCommandBarVisible(false) }
+        commandBar.onClose = { [weak self] in self?.terminals.setOverlayVisible(false) }
+        switcher.onClose = { [weak self] in self?.terminals.setOverlayVisible(false) }
+        switcher.onChoose = { [weak self] session, window in
+            guard let self else { return }
+            self.store.selectedID = session.id
+            if let window, !window.isActive { self.selectWindow(window) }
+        }
         terminals.onAlert = { [weak self] sessionID, message in
             guard let self else { return }
             // Nothing to point at if the user is looking at that session.
@@ -248,9 +257,25 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if commandBar.commands.isEmpty {
             store.listCommands { [weak self] in self?.commandBar.commands = $0 }
         }
+        switcher.close()
         commandBar.open()
-        terminals.setCommandBarVisible(true)
+        terminals.setOverlayVisible(true)
     }
+
+    // MARK: Session switcher
+
+    @objc func toggleSwitcher(_ sender: Any?) {
+        if switcher.isOpen {
+            switcher.close()
+            return
+        }
+        guard !store.sessions.isEmpty else { NSSound.beep(); return }
+        commandBar.close()
+        switcher.open()
+        terminals.setOverlayVisible(true)
+    }
+
+    var switcherState: String { switcher.debugState }
 
     /// Runs a line through the command bar (debug hook).
     func runInCommandBar(_ line: String) {
@@ -358,7 +383,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 final class TerminalContainerController: NSViewController {
     private let tmux: Tmux
     private let tabBar: NSView
-    private let commandBar: NSView
+    /// The command bar or the switcher (PaletteOverlay).
+    private let overlay: NSView
     private var views: [String: TerminalView] = [:]
     private let theme = GhosttyRuntime.shared.theme
     private let titleStrip = NSView()
@@ -371,10 +397,10 @@ final class TerminalContainerController: NSViewController {
     /// A terminal rang the bell (nil) or posted a notification (its text).
     var onAlert: ((_ sessionID: String, _ message: String?) -> Void)?
 
-    init(tmux: Tmux, tabBar: NSView, commandBar: NSView) {
+    init(tmux: Tmux, tabBar: NSView, overlay: NSView) {
         self.tmux = tmux
         self.tabBar = tabBar
-        self.commandBar = commandBar
+        self.overlay = overlay
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -410,26 +436,29 @@ final class TerminalContainerController: NSViewController {
         ])
         // Floats over the terminal below the tab bar, sized to its content
         // so it doesn't block clicks elsewhere.
-        commandBar.isHidden = true
-        commandBar.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(commandBar)
+        overlay.isHidden = true
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(overlay)
         NSLayoutConstraint.activate([
-            commandBar.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            commandBar.topAnchor.constraint(equalTo: root.safeAreaLayoutGuide.topAnchor, constant: TabBarView.height + 8),
+            overlay.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            overlay.topAnchor.constraint(equalTo: root.safeAreaLayoutGuide.topAnchor, constant: TabBarView.height + 8),
         ])
         view = root
     }
 
-    func setCommandBarVisible(_ visible: Bool) {
-        commandBar.isHidden = !visible
+    func setOverlayVisible(_ visible: Bool) {
+        overlay.isHidden = !visible
         if visible {
             // Above the terminals, which are added later.
-            view.addSubview(commandBar, positioned: .above, relativeTo: nil)
-            view.window?.makeFirstResponder(commandBar)
+            view.addSubview(overlay, positioned: .above, relativeTo: nil)
+            view.window?.makeFirstResponder(overlay)
         } else {
             // Next turn of the run loop: hiding the bar drops focus to the
             // window, and SwiftUI updates the field's focus after this.
-            DispatchQueue.main.async { [weak self] in self?.focusShown() }
+            // Not if the other panel opened meanwhile (⌘: while ⌘K is open).
+            DispatchQueue.main.async { [weak self] in
+                if self?.overlay.isHidden == true { self?.focusShown() }
+            }
         }
     }
 

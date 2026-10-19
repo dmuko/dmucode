@@ -14,6 +14,10 @@ final class SessionStore: ObservableObject {
     var selectedSession: TmuxSession? { sessions.first { $0.id == selectedID } }
     @Published var selectedID: String? {
         didSet {
+            if let id = selectedID, recentIDs.first != id {
+                recentIDs.removeAll { $0 == id }
+                recentIDs.insert(id, at: 0)
+            }
             guard !selectingAutomatically else { return }
             // A choice by the user (sidebar, shortcut, switching inside tmux)
             // is the session to come back to next time.
@@ -23,6 +27,8 @@ final class SessionStore: ObservableObject {
             }
         }
     }
+    /// Sessions in the order they were shown, most recent first (for ⌘K).
+    private(set) var recentIDs: [String] = []
     @Published private(set) var errorMessage: String?
     /// True while updates arrive as control-mode events, false while polling.
     @Published private(set) var isLive = false
@@ -282,6 +288,7 @@ final class SessionStore: ObservableObject {
             if sessions != self.sessions { self.sessions = sessions }
             let ids = Set(sessions.map(\.id))
             if alerts.keys.contains(where: { !ids.contains($0) }) { alerts = alerts.filter { ids.contains($0.key) } }
+            recentIDs.removeAll { !ids.contains($0) }
             fixSelection()
         case .failure(let error):
             errorMessage = "\(error)"
