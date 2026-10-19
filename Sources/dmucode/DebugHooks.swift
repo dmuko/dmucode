@@ -10,6 +10,8 @@ import IOSurface
 ///   type TEXT       synthesize key presses for TEXT ("\n" = Return)
 ///   ctrl LETTER     synthesize ctrl+LETTER (e.g. tmux prefix: ctrl b)
 ///   select N        select the Nth session in the sidebar
+///   tab N           select the Nth window tab of the selected session
+///   newtab          open a new window in the selected session (the + button)
 ///   new NAME        create a session (as the New Session button does)
 ///   state NAME      write the sidebar state (live, selection, sessions) to NAME.txt
 ///   pixels NAME     write raw RGBA samples of the visible terminal's IOSurface to NAME.txt
@@ -45,7 +47,10 @@ enum DebugHooks {
             }
         case "state":
             var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque) restoring=\(store.isRestoring)"]
-            lines += store.sessions.map { "\($0.id) \($0.name) windows=\($0.windows) attached=\($0.attachedClients)" }
+            lines += store.sessions.map { session in
+                let windows = session.windows.map { "\($0.id)\($0.isActive ? "*" : ""):\($0.name)" }
+                return "\(session.id) \(session.name) windows=[\(windows.joined(separator: ","))] attached=\(session.attachedClients)"
+            }
             try? (lines.joined(separator: "\n") + "\n").write(
                 to: URL(fileURLWithPath: dir).appendingPathComponent("\(arg).txt"), atomically: true, encoding: .utf8)
         case "pixels":
@@ -67,6 +72,14 @@ enum DebugHooks {
             }
             try? (lines.joined(separator: "\n") + "\n").write(
                 to: URL(fileURLWithPath: dir).appendingPathComponent("\(arg).txt"), atomically: true, encoding: .utf8)
+        case "tab":
+            if let n = Int(arg), let session = store.selectedSession, session.windows.indices.contains(n - 1) {
+                store.selectWindow(session.windows[n - 1].id, in: session.id)
+            }
+        case "newtab":
+            if let id = store.selectedID {
+                store.perform { tmux in try tmux.newWindow(sessionID: id) }
+            }
         case "new":
             var newID: String?
             store.perform({ tmux in
