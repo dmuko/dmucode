@@ -198,8 +198,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         renameWindow(current)
     }
 
-    @objc func selectNextTab(_ sender: Any?) { stepWindow(1) }
-    @objc func selectPreviousTab(_ sender: Any?) { stepWindow(-1) }
+    // Not selectNextTab/selectPreviousTab: NSWindow has those for native
+    // window tabs, comes first in the responder chain and disables them.
+    @objc func selectNextTmuxWindow(_ sender: Any?) { stepWindow(1) }
+    @objc func selectPreviousTmuxWindow(_ sender: Any?) { stepWindow(-1) }
 
     /// ⌥⌘1…9: the Nth tab from the left, whatever tmux's base-index.
     @objc func selectTabByTag(_ sender: NSMenuItem) {

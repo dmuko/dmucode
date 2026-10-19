@@ -9,7 +9,7 @@ import IOSurface
 ///   snapshot NAME   write the window (sidebar + terminal) to NAME.png
 ///   type TEXT       synthesize key presses for TEXT ("\n" = Return)
 ///   ctrl LETTER     synthesize ctrl+LETTER (e.g. tmux prefix: ctrl b)
-///   key MODS+KEY    run the menu item with that shortcut (e.g. key cmd+opt+right)
+///   key MODS+KEY    run the menu item with that shortcut (e.g. key cmd+right)
 ///   select N        select the Nth session in the sidebar
 ///   tab N           select the Nth window tab of the selected session
 ///   newtab          open a new window in the selected session (the + button)
@@ -135,7 +135,8 @@ enum DebugHooks {
             default: return
             }
         }
-        let arrows = ["left": NSLeftArrowFunctionKey, "right": NSRightArrowFunctionKey]
+        let arrows = ["left": NSLeftArrowFunctionKey, "right": NSRightArrowFunctionKey,
+                      "up": NSUpArrowFunctionKey, "down": NSDownArrowFunctionKey]
         let key = arrows[name].map { String(UnicodeScalar($0)!) } ?? name
         // Matched by hand: AppKit finds a menu action's target through the
         // key window, and an inactive app (usually a test instance) has none.
@@ -145,9 +146,19 @@ enum DebugHooks {
             NSLog("debug: no menu item for %@", spec)
             return
         }
-        if window.firstResponder?.tryToPerform(action, with: item) != true {
-            NSLog("debug: nothing handled %@", spec)
+        // Like AppKit: the first responder in the chain that implements the
+        // action is the target, and it decides whether the item is enabled.
+        var target = window.firstResponder
+        while let responder = target, !responder.responds(to: action) { target = responder.nextResponder }
+        guard let target else {
+            NSLog("debug: nothing handles %@", spec)
+            return
         }
+        if let validator = target as? NSMenuItemValidation, !validator.validateMenuItem(item) {
+            NSLog("debug: %@ is disabled (target %@)", spec, String(describing: type(of: target)))
+            return
+        }
+        target.perform(action, with: item)
     }
 
     private static func menuItems(_ menu: NSMenu?) -> [NSMenuItem] {

@@ -67,10 +67,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         session.addItem(withTitle: "Rename Session…", action: #selector(MainWindowController.renameSelected(_:)), keyEquivalent: "r")
         session.addItem(withTitle: "Kill Session…", action: #selector(MainWindowController.killSelected(_:)), keyEquivalent: "")
         session.addItem(.separator())
-        let next = session.addItem(withTitle: "Next Session", action: #selector(MainWindowController.selectNextSession(_:)), keyEquivalent: "]")
-        next.keyEquivalentModifierMask = [.command, .shift]
-        let previous = session.addItem(withTitle: "Previous Session", action: #selector(MainWindowController.selectPreviousSession(_:)), keyEquivalent: "[")
-        previous.keyEquivalentModifierMask = [.command, .shift]
+        // ⌘↑/⌘↓ for sessions (the sidebar is vertical), ⌘←/⌘→ for tabs.
+        // These take the keys from Ghostty's own cmd+arrow bindings.
+        session.addItem(withTitle: "Previous Session", action: #selector(MainWindowController.selectPreviousSession(_:)),
+                        keyEquivalent: String(UnicodeScalar(NSUpArrowFunctionKey)!))
+        session.addItem(withTitle: "Next Session", action: #selector(MainWindowController.selectNextSession(_:)),
+                        keyEquivalent: String(UnicodeScalar(NSDownArrowFunctionKey)!))
         session.addItem(.separator())
         for i in 1...9 {
             let item = session.addItem(withTitle: "Session \(i)", action: #selector(MainWindowController.selectSessionByTag(_:)), keyEquivalent: "\(i)")
@@ -78,21 +80,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         main.addItem(submenu: session, title: "Session")
 
-        // Tabs are the selected session's tmux windows. ⌥⌘ keeps them apart
-        // from the session shortcuts; arrows instead of brackets, which need
-        // ⌥ on many layouts (e.g. Finnish).
+        // Tabs are the selected session's tmux windows. ⌥⌘ for the rest keeps
+        // them apart from the session shortcuts.
         let tab = NSMenu(title: "Tab")
         tab.addItem(withTitle: "New Tab", action: #selector(MainWindowController.newTab(_:)), keyEquivalent: "t")
         tab.addItem(withTitle: "Rename Tab…", action: #selector(MainWindowController.renameTab(_:)), keyEquivalent: "r")
             .keyEquivalentModifierMask = [.command, .option]
         tab.addItem(withTitle: "Close Tab…", action: #selector(MainWindowController.closeTab(_:)), keyEquivalent: "w")
         tab.addItem(.separator())
-        tab.addItem(withTitle: "Next Tab", action: #selector(MainWindowController.selectNextTab(_:)),
-                    keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
-            .keyEquivalentModifierMask = [.command, .option]
-        tab.addItem(withTitle: "Previous Tab", action: #selector(MainWindowController.selectPreviousTab(_:)),
+        tab.addItem(withTitle: "Previous Tab", action: #selector(MainWindowController.selectPreviousTmuxWindow(_:)),
                     keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
-            .keyEquivalentModifierMask = [.command, .option]
+        tab.addItem(withTitle: "Next Tab", action: #selector(MainWindowController.selectNextTmuxWindow(_:)),
+                    keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
         tab.addItem(.separator())
         for i in 1...9 {
             let item = tab.addItem(withTitle: "Tab \(i)", action: #selector(MainWindowController.selectTabByTag(_:)), keyEquivalent: "\(i)")
