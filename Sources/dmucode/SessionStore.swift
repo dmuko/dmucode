@@ -181,6 +181,30 @@ final class SessionStore: ObservableObject {
         perform { tmux in try tmux.selectWindow(sessionID: sessionID, windowID: windowID) }
     }
 
+    // MARK: Command bar
+
+    /// Runs a command-bar line as the session's active pane, then refreshes.
+    func runCommandLine(_ line: String, in sessionID: String, done: @escaping (Result<String, Error>) -> Void) {
+        let tmux = self.tmux
+        queue.async {
+            let result = Result {
+                try tmux.runCommandLine(line, pane: try tmux.activePane(sessionID: sessionID))
+            }
+            DispatchQueue.main.async {
+                done(result)
+                self.refresh()
+            }
+        }
+    }
+
+    func listCommands(_ done: @escaping ([TmuxCommand]) -> Void) {
+        let tmux = self.tmux
+        queue.async {
+            let commands = (try? tmux.listCommands()) ?? []
+            DispatchQueue.main.async { done(commands) }
+        }
+    }
+
     // MARK: Control mode
 
     /// Switches from polling to events once there is a session to attach to.

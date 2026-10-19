@@ -9,6 +9,7 @@ import SwiftUI
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     let store: SessionStore
     private let git = GitStatusStore()
+    private let commandBar = CommandBarModel()
     private let terminals: TerminalContainerController
     private var cancellables: Set<AnyCancellable> = []
 
@@ -18,7 +19,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // The real actions need self; set below.
         let tabBar = NSHostingView(rootView: TabBarView(
             store: store, git: git, theme: theme, onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }))
-        self.terminals = TerminalContainerController(tmux: store.tmux, tabBar: tabBar)
+        let commandBarView = NSHostingView(rootView: CommandBarView(model: commandBar, theme: theme))
+        self.terminals = TerminalContainerController(tmux: store.tmux, tabBar: tabBar, commandBar: commandBarView)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
@@ -60,6 +62,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.setContentSize(NSSize(width: 1100, height: 700))
 
         terminals.onTerminalClosed = { [weak self] in self?.store.refresh() }
+        commandBar.onRun = { [weak self] line, done in
+            guard let self, let sessionID = self.store.selectedID else {
+                done(.failure(TmuxError(description: "No session selected")))
+                return
+            }
+            self.store.runCommandLine(line, in: sessionID, done: done)
+        }
+        commandBar.onClose = { [weak self] in self?.terminals.setCommandBarVisible(false) }
         terminals.onAlert = { [weak self] sessionID, message in
             guard let self else { return }
             // Nothing to point at if the user is looking at that session.
@@ -227,6 +237,38 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         store.perform { tmux in try tmux.killSession(id: session.id) }
     }
 
+    // MARK: Command bar
+
+    @objc func toggleCommandBar(_ sender: Any?) {
+        if commandBar.isOpen {
+            commandBar.close()
+            return
+        }
+        guard store.selectedID != nil else { NSSound.beep(); return }
+        if commandBar.commands.isEmpty {
+            store.listCommands { [weak self] in self?.commandBar.commands = $0 }
+        }
+        commandBar.open()
+        terminals.setCommandBarVisible(true)
+    }
+
+    /// Runs a line through the command bar (debug hook).
+    func runInCommandBar(_ line: String) {
+        if !commandBar.isOpen { toggleCommandBar(nil) }
+        commandBar.text = line
+        commandBar.submit()
+    }
+
+    var commandBarState: String {
+        let outcome: String
+        switch commandBar.outcome {
+        case .output(let text)?: outcome = "output=" + text.replacingOccurrences(of: "\n", with: " | ")
+        case .error(let text)?: outcome = "error=" + text
+        case nil: outcome = "-"
+        }
+        return "cmdbar open=\(commandBar.isOpen) \(outcome)"
+    }
+
     // MARK: Windows (tabs)
 
     // Menu actions: they act on the selected session's current window.
@@ -316,6 +358,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 final class TerminalContainerController: NSViewController {
     private let tmux: Tmux
     private let tabBar: NSView
+    private let commandBar: NSView
     private var views: [String: TerminalView] = [:]
     private let theme = GhosttyRuntime.shared.theme
     private let titleStrip = NSView()
@@ -328,9 +371,10 @@ final class TerminalContainerController: NSViewController {
     /// A terminal rang the bell (nil) or posted a notification (its text).
     var onAlert: ((_ sessionID: String, _ message: String?) -> Void)?
 
-    init(tmux: Tmux, tabBar: NSView) {
+    init(tmux: Tmux, tabBar: NSView, commandBar: NSView) {
         self.tmux = tmux
         self.tabBar = tabBar
+        self.commandBar = commandBar
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -364,7 +408,29 @@ final class TerminalContainerController: NSViewController {
             stack.centerYAnchor.constraint(equalTo: root.centerYAnchor),
             root.widthAnchor.constraint(greaterThanOrEqualToConstant: 300),
         ])
+        // Floats over the terminal below the tab bar, sized to its content
+        // so it doesn't block clicks elsewhere.
+        commandBar.isHidden = true
+        commandBar.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(commandBar)
+        NSLayoutConstraint.activate([
+            commandBar.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            commandBar.topAnchor.constraint(equalTo: root.safeAreaLayoutGuide.topAnchor, constant: TabBarView.height + 8),
+        ])
         view = root
+    }
+
+    func setCommandBarVisible(_ visible: Bool) {
+        commandBar.isHidden = !visible
+        if visible {
+            // Above the terminals, which are added later.
+            view.addSubview(commandBar, positioned: .above, relativeTo: nil)
+            view.window?.makeFirstResponder(commandBar)
+        } else {
+            // Next turn of the run loop: hiding the bar drops focus to the
+            // window, and SwiftUI updates the field's focus after this.
+            DispatchQueue.main.async { [weak self] in self?.focusShown() }
+        }
     }
 
     func show(sessionID: String?, emptyText: String) {

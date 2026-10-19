@@ -63,6 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         main.addItem(submenu: edit, title: "Edit")
 
         let session = NSMenu(title: "Session")
+        // ⌘: (⌘⇧. on US and Finnish layouts), like tmux's prefix :.
+        session.addItem(withTitle: "tmux Command…", action: #selector(MainWindowController.toggleCommandBar(_:)), keyEquivalent: ":")
+        session.addItem(.separator())
         session.addItem(withTitle: "New Session…", action: #selector(MainWindowController.newSession(_:)), keyEquivalent: "n")
         session.addItem(withTitle: "Rename Session…", action: #selector(MainWindowController.renameSelected(_:)), keyEquivalent: "r")
         session.addItem(withTitle: "Kill Session…", action: #selector(MainWindowController.killSelected(_:)), keyEquivalent: "")
