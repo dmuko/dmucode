@@ -29,7 +29,7 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 |---|---|
 | ⌘N | uusi sessio |
 | ⌘1…⌘9 | hyppää sessioon |
-| ⌘⇧] / ⌘⇧[ | seuraava / edellinen sessio |
+| ⌘↓ / ⌘↑ | seuraava / edellinen sessio |
 | ⌘R | nimeä sessio uudelleen |
 | ⌃⌘S | näytä / piilota sivupalkki |
 | oikea klikkaus | Rename / Kill |
@@ -37,7 +37,7 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 | ⌘T tai tabipalkin + | uusi tmux-ikkuna nykyisen panen hakemistoon |
 | ⌘W | sulje nykyinen tmux-ikkuna (kysyy ensin) |
 | ⌥⌘R | nimeä nykyinen tmux-ikkuna uudelleen |
-| ⌥⌘→ / ⌥⌘← | seuraava / edellinen tabi |
+| ⌘→ / ⌘← | seuraava / edellinen tabi |
 | ⌥⌘1…⌥⌘9 | hyppää tabiin (järjestysnumero vasemmalta, ei tmuxin indeksi) |
 | tabin oikea klikkaus | Rename / Close Window |
 
