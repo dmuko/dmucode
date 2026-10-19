@@ -51,8 +51,11 @@ enum DebugHooks {
         case "state":
             var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque) restoring=\(store.isRestoring)"]
             lines += store.sessions.map { session in
-                let windows = session.windows.map { "\($0.id)\($0.isActive ? "*" : ""):\($0.name)" }
-                return "\(session.id) \(session.name) windows=[\(windows.joined(separator: ","))] attached=\(session.attachedClients)"
+                let windows = session.windows.map {
+                    "\($0.id)\($0.isActive ? "*" : "")\($0.hasBell ? "!" : "")\($0.hasActivity ? "#" : ""):\($0.name)"
+                }
+                let alert = store.alerts[session.id].map { " alert=\($0.message ?? "bell")" } ?? ""
+                return "\(session.id) \(session.name) windows=[\(windows.joined(separator: ","))] attached=\(session.attachedClients)\(alert)"
             }
             try? (lines.joined(separator: "\n") + "\n").write(
                 to: URL(fileURLWithPath: dir).appendingPathComponent("\(arg).txt"), atomically: true, encoding: .utf8)

@@ -7,6 +7,9 @@ struct TmuxSession: Identifiable, Equatable {
     /// In tmux's order (by window index).
     var windows: [TmuxWindow]
     let attachedClients: Int
+
+    var hasBell: Bool { windows.contains { $0.hasBell } }
+    var hasActivity: Bool { windows.contains { $0.hasActivity } }
 }
 
 /// A tmux window, shown as a tab above the terminal.
@@ -20,6 +23,11 @@ struct TmuxWindow: Identifiable, Equatable {
     var isActive: Bool
     /// The working directory of the window's active pane.
     let path: String
+    /// tmux's alert flags: a bell rang, or (with monitor-activity) there was
+    /// output, since the window was last current. tmux doesn't set them for
+    /// the current window of an attached session.
+    var hasBell = false
+    var hasActivity = false
 }
 
 struct TmuxError: Error, CustomStringConvertible {
@@ -51,7 +59,7 @@ struct Tmux {
     // `tmux -C`) are not counted as attached.
     static let listSessionsArgs = ["list-sessions", "-F", "#{session_id} #{session_name}"]
     static let listWindowsArgs = ["list-windows", "-a", "-F",
-                                  "#{session_id}\t#{window_id}\t#{window_index}\t#{window_active}\t#{pane_current_path}\t#{window_name}"]
+                                  "#{session_id}\t#{window_id}\t#{window_index}\t#{window_active}#{window_bell_flag}#{window_activity_flag}\t#{pane_current_path}\t#{window_name}"]
     static let listClientsArgs = ["list-clients", "-F", "#{session_id} #{client_control_mode}"]
 
     static func parseSessions(sessions: [String], windows: [String], clients: [String]) -> [TmuxSession] {
@@ -63,10 +71,12 @@ struct Tmux {
         var windowsBySession: [String: [TmuxWindow]] = [:]
         for line in windows {
             let fields = line.split(separator: "\t", maxSplits: 5, omittingEmptySubsequences: false)
-            guard fields.count == 6, let index = Int(fields[2]) else { continue }
+            // Flags: window_active, window_bell_flag, window_activity_flag.
+            let flags = Array(fields.count == 6 ? fields[3] : "")
+            guard fields.count == 6, flags.count == 3, let index = Int(fields[2]) else { continue }
             windowsBySession[String(fields[0]), default: []].append(TmuxWindow(
-                id: String(fields[1]), index: index, name: String(fields[5]), isActive: fields[3] == "1",
-                path: String(fields[4])))
+                id: String(fields[1]), index: index, name: String(fields[5]), isActive: flags[0] == "1",
+                path: String(fields[4]), hasBell: flags[1] == "1", hasActivity: flags[2] == "1"))
         }
         return sessions.compactMap { line in
             let fields = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)

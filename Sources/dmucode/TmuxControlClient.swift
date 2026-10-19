@@ -52,10 +52,12 @@ final class TmuxControlClient {
         for flag in ["no-output", "ignore-size", "no-detach-on-destroy"] {
             send(["refresh-client", "-f", flag])
         }
-        // A `cd` sends no notification. tmux checks a subscription about once
-        // a second and sends %subscription-changed when its value changes;
-        // this one covers every window's path in every session.
-        send(["refresh-client", "-B", "paths::#{S:#{W:#{window_id}=#{pane_current_path};}}"])
+        // A `cd` or a bell sends no notification. tmux checks a subscription
+        // about once a second and sends %subscription-changed when its value
+        // changes; this one covers every window's path and alert flags in
+        // every session.
+        send(["refresh-client", "-B",
+              "windows::#{S:#{W:#{window_id}=#{window_bell_flag}#{window_activity_flag}#{pane_current_path};}}"])
     }
 
     deinit {

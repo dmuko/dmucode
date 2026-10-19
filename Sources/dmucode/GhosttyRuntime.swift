@@ -121,13 +121,33 @@ final class GhosttyRuntime {
             DispatchQueue.main.async { view.onClose?() }
             return true
         case GHOSTTY_ACTION_RING_BELL:
-            DispatchQueue.main.async { NSSound.beep() }
+            // tmux forwards a bell from any window of the session to its
+            // clients, so this also covers windows not on screen.
+            let view = Self.view(target)
+            DispatchQueue.main.async {
+                NSSound.beep()
+                view?.onAlert?(nil)
+            }
+            return true
+        case GHOSTTY_ACTION_DESKTOP_NOTIFICATION:
+            // OSC 9 / OSC 777 (through tmux passthrough), e.g. Claude Code
+            // waiting for input. The strings live only during the callback.
+            let n = action.action.desktop_notification
+            let title = n.title.map { String(cString: $0) } ?? ""
+            let body = n.body.map { String(cString: $0) } ?? ""
+            let view = Self.view(target)
+            DispatchQueue.main.async { view?.onAlert?(body.isEmpty ? title : body) }
             return true
         default:
             // Everything else (Ghostty tabs, splits, windows, title...) is
             // either tmux's job here or not needed for the prototype.
             return false
         }
+    }
+
+    private static func view(_ target: ghostty_target_s) -> TerminalView? {
+        guard target.tag == GHOSTTY_TARGET_SURFACE, let surface = target.target.surface else { return nil }
+        return TerminalView.from(ghostty_surface_userdata(surface))
     }
 
     // MARK: Clipboard
