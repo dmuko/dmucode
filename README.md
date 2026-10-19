@@ -91,7 +91,17 @@ set -g @resurrect-capture-pane-contents 'on'
 set -g @continuum-restore 'on'
 ```
 
+Pluginit pitää myös asentaa: `prefix I` tai `~/.config/tmux/plugins/tpm/bin/install_plugins`. tpm ei asenna niitä itsestään. Toimivuuden voi tarkistaa näin: `prefix C-s` tallentaa, ja tiedoston `~/.local/share/tmux/resurrect/last` pitää ilmestyä.
+
 - **Tallennus:** continuum tallentaa 15 minuutin välein ja palauttaa viimeisimmän tallennuksen, kun tmux-palvelin käynnistyy.
+- **Ilman status-riviä (`set -g status off`):** continuum tallentaa vain status-rivin päivityksen yhteydessä (`#(continuum_save.sh)` `status-right`:ssä), joten ilman status-riviä automaattinen tallennus ei toimi. Palautus toimii silti. Tallennus korvataan silmukalla. Silmukka saa tmuxilta oman palvelimensa `$TMUX`:n ja sammuu palvelimen mukana, ja optio estää uuden silmukan syntymisen, kun konfiguraatio ladataan uudelleen:
+
+  ```tmux
+  if -F '#{@autosave-loop}' '' {
+    set -g @autosave-loop 1
+    run-shell -b 'while tmux has-session 2>/dev/null; do sleep 900; ~/.config/tmux/plugins/tmux-resurrect/scripts/save.sh quiet; done'
+  }
+  ```
 - **dmucode käynnistää palautuksen:** jos palvelin ei ole käynnissä ja tallennus löytyy (`~/.local/share/tmux/resurrect/last` tai `~/.tmux/resurrect/last`), dmucode käynnistää palvelimen väliaikaisella sessiolla. Continuum palauttaa sessiot, ja resurrect poistaa väliaikaisen session `0`.
 - **Käyttöliittymä palautuksen aikana:** sovellus näyttää tekstin "Restoring tmux sessions…" eikä näytä väliaikaista sessiota. Palautuksen jälkeen valituksi tulee viimeksi käytetty sessio. Viimeksi käytetty sessio muistetaan nimellä ja erikseen jokaiselle tmux-socketille.
 - **Jos palautusta ei tule 20 sekunnissa:** väliaikainen sessio näytetään tavallisena sessiona.
