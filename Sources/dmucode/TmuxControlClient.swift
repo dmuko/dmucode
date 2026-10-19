@@ -2,12 +2,8 @@ import Foundation
 import os
 
 /// A tmux control-mode client (`tmux -C attach-session`) used for
-/// notifications and queries, never for pane output.
-///
-/// Protocol (tmux(1), CONTROL MODE): each command's reply is framed by
-/// `%begin <time> <number> <flags>` … `%end|%error <time> <number> <flags>`,
-/// where flags is 1 for commands this client sent. Lines outside a block are
-/// notifications such as `%sessions-changed`.
+/// notifications and queries, never for pane output. The protocol itself is
+/// in ControlModeParser.
 ///
 /// Connection events go to the unified log (subsystem dev.dmucode.app,
 /// category control), notifications and commands at debug level.
@@ -33,8 +29,7 @@ final class TmuxControlClient {
     private var heartbeat: DispatchSourceTimer?
 
     // Only touched from the output handle's reader queue.
-    private var buffer = Data()
-    private var block: (number: Substring, ours: Bool, lines: [String])?
+    private var parser = ControlModeParser()
 
     // Replies arrive in the order commands were sent. SuspendingClock, like
     // the heartbeat timer, stands still while the Mac sleeps, so a command
@@ -133,49 +128,17 @@ final class TmuxControlClient {
     // MARK: Reading
 
     private func consume(_ data: Data) {
-        buffer.append(data)
-        while let newline = buffer.firstIndex(of: 0x0A) {
-            let line = String(decoding: buffer[buffer.startIndex..<newline], as: UTF8.self)
-            buffer.removeSubrange(buffer.startIndex...newline)
-            handle(line)
-        }
-    }
-
-    private func handle(_ line: String) {
-        let fields = line.split(separator: " ", omittingEmptySubsequences: false)
-
-        if let current = block {
-            // Only a guard line with the same command number ends the block;
-            // command output itself may start with "%".
-            if let guardName = fields.first, guardName == "%end" || guardName == "%error",
-               fields.count >= 3, fields[2] == current.number {
-                block = nil
-                guard current.ours else { return }
-                let result: Result<[String], TmuxError> = guardName == "%end"
-                    ? .success(current.lines)
-                    : .failure(TmuxError(description: current.lines.joined(separator: "\n")))
+        for event in parser.consume(data) {
+            switch event {
+            case .reply(let result):
                 if let reply = popPending() {
                     DispatchQueue.main.async { reply(result) }
                 }
-            } else {
-                block?.lines.append(line)
-            }
-            return
-        }
-
-        guard let name = fields.first, name.hasPrefix("%") else { return }
-        switch name {
-        case "%begin":
-            guard fields.count >= 4 else { return }
-            block = (fields[2], fields[3] == "1", [])
-        case "%output", "%extended-output":
-            // Only possible before no-output takes effect.
-            return
-        default:
-            Self.log.debug("< \(line, privacy: .public)")
-            let args = fields.dropFirst().map(String.init)
-            DispatchQueue.main.async { [weak self] in
-                self?.onNotification?(String(name), args)
+            case .notification(let name, let args):
+                Self.log.debug("< \(name, privacy: .public) \(args.joined(separator: " "), privacy: .public)")
+                DispatchQueue.main.async { [weak self] in
+                    self?.onNotification?(name, args)
+                }
             }
         }
     }
@@ -233,5 +196,66 @@ final class TmuxControlClient {
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "$", with: "\\$")
         return "\"" + escaped + "\""
+    }
+}
+
+/// The control-mode protocol (tmux(1), CONTROL MODE), apart from the
+/// process: each command's reply is framed by `%begin <time> <number> <flags>`
+/// … `%end|%error <time> <number> <flags>`, where flags is 1 for commands
+/// this client sent. Lines outside a block are notifications such as
+/// `%sessions-changed`.
+struct ControlModeParser {
+    enum Event: Equatable {
+        /// The reply to the oldest command this client sent that has none yet.
+        case reply(Result<[String], TmuxError>)
+        /// A notification's name (e.g. "%sessions-changed") and arguments.
+        case notification(name: String, args: [String])
+    }
+
+    private var buffer = Data()
+    private var block: (number: Substring, ours: Bool, lines: [String])?
+
+    /// The events in the lines completed by `data`; a partial line waits
+    /// for the rest.
+    mutating func consume(_ data: Data) -> [Event] {
+        buffer.append(data)
+        var events: [Event] = []
+        while let newline = buffer.firstIndex(of: 0x0A) {
+            let line = String(decoding: buffer[buffer.startIndex..<newline], as: UTF8.self)
+            buffer.removeSubrange(buffer.startIndex...newline)
+            if let event = handle(line) { events.append(event) }
+        }
+        return events
+    }
+
+    private mutating func handle(_ line: String) -> Event? {
+        let fields = line.split(separator: " ", omittingEmptySubsequences: false)
+
+        if let current = block {
+            // Only a guard line with the same command number ends the block;
+            // command output itself may start with "%".
+            guard let guardName = fields.first, guardName == "%end" || guardName == "%error",
+                  fields.count >= 3, fields[2] == current.number else {
+                block?.lines.append(line)
+                return nil
+            }
+            block = nil
+            guard current.ours else { return nil }
+            return .reply(guardName == "%end"
+                ? .success(current.lines)
+                : .failure(TmuxError(description: current.lines.joined(separator: "\n"))))
+        }
+
+        guard let name = fields.first, name.hasPrefix("%") else { return nil }
+        switch name {
+        case "%begin":
+            if fields.count >= 4 { block = (fields[2], fields[3] == "1", []) }
+            return nil
+        case "%output", "%extended-output":
+            // Only possible before no-output takes effect.
+            return nil
+        default:
+            return .notification(name: String(name), args: fields.dropFirst().map(String.init))
+        }
     }
 }

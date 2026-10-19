@@ -22,6 +22,8 @@ cd dmucode
 open build/dmucode.app
 ```
 
+Yksikkötestit ajetaan komennolla `swift test` ([Tests/dmucodeTests](Tests/dmucodeTests), Swift Testing). Ne kattavat control mode -protokollan jäsentimen, tmuxin lista- ja `git status` -tulosteiden jäsennyksen, ⌘K:n sumean haun ja sivupalkin järjestyksen. Testit tuovat sovelluskohteen `@testable import dmucode` -lauseella, joten ne tarvitsevat GhosttyKitin kuten käännöskin.
+
 Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `431126c` (2026-10-18), jolla prototyyppi on testattu. `ghostty.h` on Ghosttyn sisäinen API ja voi muuttua milloin tahansa. Kun päivität Ghosttyn, aja `build-ghosttykit.sh` uudelleen ja testaa.
 
 ## Käyttö
