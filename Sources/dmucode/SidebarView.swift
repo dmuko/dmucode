@@ -71,7 +71,7 @@ private struct SessionRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(session.name)
                     .lineLimit(1)
-                Text(session.windows == 1 ? "1 window" : "\(session.windows) windows")
+                Text(session.windows.count == 1 ? "1 window" : "\(session.windows.count) windows")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

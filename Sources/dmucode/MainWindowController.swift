@@ -13,7 +13,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     init(store: SessionStore) {
         self.store = store
-        self.terminals = TerminalContainerController(tmux: store.tmux)
+        let theme = GhosttyRuntime.shared.theme
+        // The real actions need self; set below.
+        let tabBar = NSHostingView(rootView: TabBarView(
+            store: store, theme: theme, onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }))
+        self.terminals = TerminalContainerController(tmux: store.tmux, tabBar: tabBar)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
@@ -24,17 +28,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // The title bar shows the terminal theme's background (drawn by the
         // content underneath) instead of the system's titlebar material.
         window.titlebarAppearsTransparent = true
-        window.appearance = GhosttyRuntime.shared.theme.appearance
+        window.appearance = theme.appearance
         window.setFrameAutosaveName("DmucodeMainWindow")
         if !window.setFrameUsingName("DmucodeMainWindow") { window.center() }
 
         super.init(window: window)
         window.delegate = self
+        tabBar.rootView = TabBarView(
+            store: store,
+            theme: theme,
+            onSelect: { [weak self] in self?.selectWindow($0) },
+            onNew: { [weak self] in self?.newWindow() },
+            onRename: { [weak self] in self?.renameWindow($0) },
+            onClose: { [weak self] in self?.closeWindow($0) })
 
         let split = NSSplitViewController()
         let sidebar = NSHostingController(rootView: SidebarView(
             store: store,
-            theme: GhosttyRuntime.shared.theme,
+            theme: theme,
             onNew: { [weak self] in self?.newSession(nil) },
             onRename: { [weak self] in self?.rename($0) },
             onKill: { [weak self] in self?.kill($0) }))
@@ -144,9 +155,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     @objc func selectNextSession(_ sender: Any?) { step(1) }
     @objc func selectPreviousSession(_ sender: Any?) { step(-1) }
 
-    private var selectedSession: TmuxSession? {
-        store.sessions.first(where: { $0.id == store.selectedID })
-    }
+    private var selectedSession: TmuxSession? { store.selectedSession }
 
     private func step(_ delta: Int) {
         let sessions = store.sessions
@@ -173,6 +182,73 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         store.perform { tmux in try tmux.killSession(id: session.id) }
     }
 
+    // MARK: Windows (tabs)
+
+    // Menu actions: they act on the selected session's current window.
+
+    @objc func newTab(_ sender: Any?) { newWindow() }
+
+    @objc func closeTab(_ sender: Any?) {
+        guard let current = currentWindow else { return }
+        closeWindow(current)
+    }
+
+    @objc func renameTab(_ sender: Any?) {
+        guard let current = currentWindow else { return }
+        renameWindow(current)
+    }
+
+    @objc func selectNextTab(_ sender: Any?) { stepWindow(1) }
+    @objc func selectPreviousTab(_ sender: Any?) { stepWindow(-1) }
+
+    /// ⌥⌘1…9: the Nth tab from the left, whatever tmux's base-index.
+    @objc func selectTabByTag(_ sender: NSMenuItem) {
+        guard let windows = selectedSession?.windows, windows.indices.contains(sender.tag - 1) else { return }
+        selectWindow(windows[sender.tag - 1])
+    }
+
+    private var currentWindow: TmuxWindow? {
+        selectedSession?.windows.first(where: \.isActive)
+    }
+
+    private func stepWindow(_ delta: Int) {
+        guard let windows = selectedSession?.windows, !windows.isEmpty else { return }
+        let current = windows.firstIndex(where: \.isActive) ?? 0
+        selectWindow(windows[(current + delta + windows.count) % windows.count])
+    }
+
+    private func selectWindow(_ tmuxWindow: TmuxWindow) {
+        guard let sessionID = store.selectedID else { return }
+        store.selectWindow(tmuxWindow.id, in: sessionID)
+        terminals.focusShown()
+    }
+
+    private func newWindow() {
+        guard let sessionID = store.selectedID else { return }
+        store.perform { tmux in try tmux.newWindow(sessionID: sessionID) }
+        terminals.focusShown()
+    }
+
+    private func renameWindow(_ tmuxWindow: TmuxWindow) {
+        guard let sessionID = store.selectedID,
+              let name = prompt(title: "Rename window", message: "New name for “\(tmuxWindow.name)”:", value: tmuxWindow.name),
+              !name.isEmpty, name != tmuxWindow.name else { return }
+        store.perform { tmux in try tmux.renameWindow(sessionID: sessionID, windowID: tmuxWindow.id, to: name) }
+    }
+
+    private func closeWindow(_ tmuxWindow: TmuxWindow) {
+        guard let sessionID = store.selectedID else { return }
+        let alert = NSAlert()
+        alert.messageText = "Close tmux window “\(tmuxWindow.name)”?"
+        alert.informativeText = "Its panes and the programs running in them will be terminated."
+            + (selectedSession?.windows.count == 1 ? " It is the session's last window, so the session ends too." : "")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Close Window")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        store.perform { tmux in try tmux.killWindow(sessionID: sessionID, windowID: tmuxWindow.id) }
+    }
+
     private func prompt(title: String, message: String, value: String) -> String? {
         let alert = NSAlert()
         alert.messageText = title
@@ -188,9 +264,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
-/// Holds one TerminalView per opened session and shows the selected one.
+/// Holds one TerminalView per opened session and shows the selected one,
+/// with the session's windows as tabs above it.
 final class TerminalContainerController: NSViewController {
     private let tmux: Tmux
+    private let tabBar: NSView
     private var views: [String: TerminalView] = [:]
     private let theme = GhosttyRuntime.shared.theme
     private let titleStrip = NSView()
@@ -201,8 +279,9 @@ final class TerminalContainerController: NSViewController {
     var onTerminalClosed: (() -> Void)?
     var onReattach: (() -> Void)?
 
-    init(tmux: Tmux) {
+    init(tmux: Tmux, tabBar: NSView) {
         self.tmux = tmux
+        self.tabBar = tabBar
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -220,6 +299,8 @@ final class TerminalContainerController: NSViewController {
         titleStrip.wantsLayer = true
         titleStrip.layer?.backgroundColor = theme.chromeBackground.cgColor
         root.addSubview(titleStrip)
+        tabBar.isHidden = true
+        root.addSubview(tabBar)
 
         placeholder.alignment = .center
         placeholder.textColor = .secondaryLabelColor
@@ -269,10 +350,10 @@ final class TerminalContainerController: NSViewController {
     }
 
     /// The window uses a full-size content view, so keep terminals out from
-    /// under the title bar and toolbar.
+    /// under the title bar and toolbar, and below the tab bar.
     private var terminalFrame: NSRect {
         var frame = view.bounds
-        frame.size.height -= view.safeAreaInsets.top
+        frame.size.height -= view.safeAreaInsets.top + TabBarView.height
         return frame
     }
 
@@ -281,6 +362,14 @@ final class TerminalContainerController: NSViewController {
         for terminal in views.values { terminal.frame = terminalFrame }
         let top = view.safeAreaInsets.top
         titleStrip.frame = NSRect(x: 0, y: view.bounds.height - top, width: view.bounds.width, height: top)
+        tabBar.frame = NSRect(x: 0, y: view.bounds.height - top - TabBarView.height,
+                              width: view.bounds.width, height: TabBarView.height)
+    }
+
+    /// Gives the keyboard back to the visible terminal, e.g. after a tab click.
+    func focusShown() {
+        guard let shownID, let terminal = views[shownID] else { return }
+        view.window?.makeFirstResponder(terminal)
     }
 
     /// Drops terminals whose session no longer exists.
@@ -326,6 +415,7 @@ final class TerminalContainerController: NSViewController {
     }
 
     private func showPlaceholder(_ text: String, reattach: Bool) {
+        tabBar.isHidden = true
         placeholder.stringValue = text
         placeholder.isHidden = false
         reattachButton.isHidden = !reattach
@@ -333,6 +423,7 @@ final class TerminalContainerController: NSViewController {
     }
 
     private func hidePlaceholder() {
+        tabBar.isHidden = false
         placeholder.isHidden = true
         reattachButton.isHidden = true
         if theme.isTranslucent { view.layer?.backgroundColor = NSColor.clear.cgColor }

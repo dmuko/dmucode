@@ -78,6 +78,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         main.addItem(submenu: session, title: "Session")
 
+        // Tabs are the selected session's tmux windows. ⌥⌘ keeps them apart
+        // from the session shortcuts; arrows instead of brackets, which need
+        // ⌥ on many layouts (e.g. Finnish).
+        let tab = NSMenu(title: "Tab")
+        tab.addItem(withTitle: "New Tab", action: #selector(MainWindowController.newTab(_:)), keyEquivalent: "t")
+        tab.addItem(withTitle: "Rename Tab…", action: #selector(MainWindowController.renameTab(_:)), keyEquivalent: "r")
+            .keyEquivalentModifierMask = [.command, .option]
+        tab.addItem(withTitle: "Close Tab…", action: #selector(MainWindowController.closeTab(_:)), keyEquivalent: "w")
+        tab.addItem(.separator())
+        tab.addItem(withTitle: "Next Tab", action: #selector(MainWindowController.selectNextTab(_:)),
+                    keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
+            .keyEquivalentModifierMask = [.command, .option]
+        tab.addItem(withTitle: "Previous Tab", action: #selector(MainWindowController.selectPreviousTab(_:)),
+                    keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
+            .keyEquivalentModifierMask = [.command, .option]
+        tab.addItem(.separator())
+        for i in 1...9 {
+            let item = tab.addItem(withTitle: "Tab \(i)", action: #selector(MainWindowController.selectTabByTag(_:)), keyEquivalent: "\(i)")
+            item.keyEquivalentModifierMask = [.command, .option]
+            item.tag = i
+        }
+        main.addItem(submenu: tab, title: "Tab")
+
         let window = NSMenu(title: "Window")
         window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         window.addItem(withTitle: "Toggle Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")

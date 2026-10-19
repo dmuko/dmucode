@@ -79,13 +79,17 @@ final class TmuxControlClient {
         }
     }
 
-    /// The sidebar's session list, queried over this connection.
+    /// The sessions and their windows, queried over this connection.
     func listSessions(_ completion: @escaping (Result<[TmuxSession], TmuxError>) -> Void) {
         var sessions: Result<[String], TmuxError> = .success([])
+        var windows: Result<[String], TmuxError> = .success([])
         send(Tmux.listSessionsArgs) { sessions = $0 }
+        send(Tmux.listWindowsArgs) { windows = $0 }
         send(Tmux.listClientsArgs) { clients in
             completion(sessions.flatMap { sessionLines in
-                clients.map { Tmux.parseSessions(sessions: sessionLines, clients: $0) }
+                windows.flatMap { windowLines in
+                    clients.map { Tmux.parseSessions(sessions: sessionLines, windows: windowLines, clients: $0) }
+                }
             })
         }
     }

@@ -4,7 +4,8 @@ Minimaalinen macOS-prototyyppi:
 
 - Vasemmassa sivupalkissa näkyvät tmux-palvelimen sessiot. Lista päivittyy tapahtumista tmuxin control mode -yhteyden kautta.
 - Kun klikkaat sessiota, oikealle avautuu Ghostty-terminaali (GhosttyKit), jossa ajetaan `tmux attach-session -t <id>`.
-- Splitit, ikkunat ja muun hoitaa tmux itse.
+- Session tmux-ikkunat näkyvät tabeina terminaalin yläpuolella.
+- Splitit ja muun hoitaa tmux itse.
 
 Sessiot elävät tmux-palvelimessa, eivät sovelluksessa. Sovelluksen sulkeminen vain irrottaa tmux-clientit. Kun sovellus käynnistetään uudestaan, sivupalkki näyttää sessiot taas ja liittyy viimeksi käytettyyn.
 
@@ -32,6 +33,13 @@ Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `4311
 | ⌘R | nimeä sessio uudelleen |
 | ⌃⌘S | näytä / piilota sivupalkki |
 | oikea klikkaus | Rename / Kill |
+| tabin klikkaus | valitse tmux-ikkuna |
+| ⌘T tai tabipalkin + | uusi tmux-ikkuna nykyisen panen hakemistoon |
+| ⌘W | sulje nykyinen tmux-ikkuna (kysyy ensin) |
+| ⌥⌘R | nimeä nykyinen tmux-ikkuna uudelleen |
+| ⌥⌘→ / ⌥⌘← | seuraava / edellinen tabi |
+| ⌥⌘1…⌥⌘9 | hyppää tabiin (järjestysnumero vasemmalta, ei tmuxin indeksi) |
+| tabin oikea klikkaus | Rename / Close Window |
 
 Ghostty-asetukset (fontti, teema) luetaan tiedostosta `~/.config/ghostty/config`.
 
@@ -40,7 +48,7 @@ Ympäristömuuttujat:
 - `DMUCODE_TMUX_SOCKET=nimi` käyttää erillistä tmux-palvelinta (`tmux -L nimi`). Hyödyllinen testaukseen, ettei oikeisiin sessioihin kosketa.
 - `DMUCODE_TMUX=/polku/tmux` ohittaa tmuxin automaattisen etsinnän.
 - `DMUCODE_RESURRECT_DIR=hakemisto` vaihtaa hakemiston, josta tmux-resurrectin tallennusta etsitään (testejä varten).
-- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `select`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
+- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `key`, `select`, `tab`, `newtab`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
 
 ## Rakenne
 
@@ -48,16 +56,18 @@ Ympäristömuuttujat:
 - [GhosttyRuntime.swift](Sources/dmucode/GhosttyRuntime.swift): `ghostty_app_t`, konfiguraatio, leikepöytä ja Ghosttyn action-callbackit.
 - [Tmux.swift](Sources/dmucode/Tmux.swift) ja [SessionStore.swift](Sources/dmucode/SessionStore.swift): tmux-CLI-kääre ja sivupalkin malli.
 - [MainWindowController.swift](Sources/dmucode/MainWindowController.swift) ja [SidebarView.swift](Sources/dmucode/SidebarView.swift): ikkuna, sivupalkki ja terminaalinäkymien vaihto.
+- [TabBarView.swift](Sources/dmucode/TabBarView.swift): valitun session tmux-ikkunat tabeina.
 - [GhosttyInput.swift](Sources/dmucode/GhosttyInput.swift): näppäinten muunnokset, sovitettu Ghosttyn macOS-sovelluksesta (MIT).
 - [scripts/make-icon.swift](scripts/make-icon.swift): piirtää sovelluksen ikonin (D ja C osittain päällekkäin) CoreGraphicsilla. Käytössä on paletti `mocha`. Ikoni luodaan uudelleen komennolla `swift scripts/make-icon.swift icns mocha Resources/AppIcon.icns`, ja kaikkien palettien vertailukuva komennolla `swift scripts/make-icon.swift preview build/icon-preview.png`.
 
 ## Control mode -yhteys
 
-Sovellus pitää yllä yhtä `tmux -C attach-session` -clientia ([TmuxControlClient.swift](Sources/dmucode/TmuxControlClient.swift)) ja kuuntelee sen ilmoituksia: `%sessions-changed`, `%session-renamed`, `%window-add`/`-close`, `%unlinked-window-*`, `%client-session-changed` ja `%client-detached`. Jokainen ilmoitus käynnistää uuden kyselyn (`list-sessions` + `list-clients`) samaa yhteyttä pitkin. Saman purskeen ilmoitukset niputetaan 50 ms:n sisällä.
+Sovellus pitää yllä yhtä `tmux -C attach-session` -clientia ([TmuxControlClient.swift](Sources/dmucode/TmuxControlClient.swift)) ja kuuntelee sen ilmoituksia: `%sessions-changed`, `%session-renamed`, `%window-add`/`-close`/`-renamed`, `%unlinked-window-*`, `%session-window-changed`, `%client-session-changed` ja `%client-detached`. Jokainen ilmoitus käynnistää uuden kyselyn (`list-sessions` + `list-windows -a` + `list-clients`) samaa yhteyttä pitkin. Saman purskeen ilmoitukset niputetaan 50 ms:n sisällä.
 
 - **Liputukset:** client asettaa `no-output` (panejen tuloste ei virtaa sovellukseen), `ignore-size` (ei vaikuta ikkunoiden kokoon) ja `no-detach-on-destroy` (jos sen oma sessio tapetaan, se siirtyy toiseen sessioon eikä katkea).
 - **Ilman sessioita:** control-clientin on pakko liittyä johonkin sessioon. Kun palvelinta tai sessioita ei ole, sovellus pollaa CLI:tä kerran sekunnissa ja yhdistää heti, kun sessio ilmestyy. Sivupalkin otsikon vihreä pallo tarkoittaa tapahtumapohjaista tilaa, harmaa pollausta.
 - **Session vaihto tmuxin sisällä:** `%client-session-changed` kertoo clientin tty:n. Jos se on jonkin terminaalin tty (`ghostty_surface_tty_name`), terminaali siirretään uuden session alle ja sivupalkki seuraa (`prefix s`, `switch-client`).
+- **Tabit:** tabit ovat valitun session ikkunat `list-windows -a`:sta. Tabin klikkaus ajaa `select-window -t $session:@ikkuna`, ja tabi vaihtuu heti. Kun ikkunaa vaihdetaan tmuxin sisällä (`prefix n`, `prefix 3`…), `%session-window-changed` siirtää korostuksen. Ikkunan valinta vaikuttaa kaikkiin samaan sessioon liitettyihin clienteihin, kuten tmuxissa muutenkin.
 - **Sivuvaikutus:** control-client näkyy tmuxissa liitettynä clientina. `tmux ls` merkitsee yhden session "(attached)":ksi, ja tmux-konfiguraation `client-attached`-hookit ajetaan. Sivupalkin "attached"-laskuri ei laske control-clienteja.
 
 ## Säilyminen rebootin yli
@@ -85,4 +95,5 @@ set -g @continuum-restore 'on'
 
 - **Continuumin vartija:** continuum ohittaa sekä palautuksen että automaattitallennuksen, jos se luulee toisen tmux-palvelimen olevan käynnissä. Se laskee prosessit, joiden komentorivi alkaa sanalla `tmux`. dmucode kutsuu tmuxia absoluuttisella polulla, joten sen prosessit eivät näy tässä laskussa, mutta esimerkiksi erillinen `tmux -L` -palvelin estää palautuksen.
 - **Mukautettu tallennushakemisto:** `@resurrect-dir` ei ole tuettu palautuksen käynnistyksessä, koska asetusta ei voi lukea ennen kuin palvelin on käynnissä.
-- **Puuttuvat ominaisuudet:** tabit (tmuxin ikkunat) puuttuvat vielä, samoin `flagsChanged`-modifier-tapahtumat, osoitinmuodot ja asetusikkuna.
+- **Ikkunoiden järjestys:** `swap-window` ei lähetä control mode -ilmoitusta, joten tabien järjestys päivittyy vasta seuraavan tapahtuman (esim. ikkunan vaihdon) jälkeen.
+- **Puuttuvat ominaisuudet:** tabeja ei voi vielä raahata, ja bell-/activity-merkinnät puuttuvat. Myös `flagsChanged`-modifier-tapahtumat, osoitinmuodot ja asetusikkuna puuttuvat.

@@ -4,8 +4,20 @@ struct TmuxSession: Identifiable, Equatable {
     /// tmux's session id, e.g. "$3". Stable across renames, unlike the name.
     let id: String
     let name: String
-    let windows: Int
+    /// In tmux's order (by window index).
+    var windows: [TmuxWindow]
     let attachedClients: Int
+}
+
+/// A tmux window, shown as a tab above the terminal.
+struct TmuxWindow: Identifiable, Equatable {
+    /// tmux's window id, e.g. "@7". A window linked into several sessions
+    /// has the same id in each, so target it together with the session.
+    let id: String
+    let index: Int
+    let name: String
+    /// The session's current window.
+    var isActive: Bool
 }
 
 struct TmuxError: Error, CustomStringConvertible {
@@ -31,26 +43,35 @@ struct Tmux {
 
     var globalArgs: [String] { socketName.map { ["-L", $0] } ?? [] }
 
-    // The sidebar query, shared by the CLI and the control-mode client. The
-    // name goes last so it may contain spaces; control clients (our own
-    // `tmux -C`) are not counted as attached.
-    static let listSessionsArgs = ["list-sessions", "-F", "#{session_id} #{session_windows} #{session_name}"]
+    // The sidebar and tab bar query, shared by the CLI and the control-mode
+    // client. Names go last so they may contain spaces; control clients
+    // (our own `tmux -C`) are not counted as attached.
+    static let listSessionsArgs = ["list-sessions", "-F", "#{session_id} #{session_name}"]
+    static let listWindowsArgs = ["list-windows", "-a", "-F",
+                                  "#{session_id} #{window_id} #{window_index} #{window_active} #{window_name}"]
     static let listClientsArgs = ["list-clients", "-F", "#{session_id} #{client_control_mode}"]
 
-    static func parseSessions(sessions: [String], clients: [String]) -> [TmuxSession] {
+    static func parseSessions(sessions: [String], windows: [String], clients: [String]) -> [TmuxSession] {
         var attached: [String: Int] = [:]
         for line in clients {
             let fields = line.split(separator: " ")
             if fields.count == 2, fields[1] == "0" { attached[String(fields[0]), default: 0] += 1 }
         }
+        var windowsBySession: [String: [TmuxWindow]] = [:]
+        for line in windows {
+            let fields = line.split(separator: " ", maxSplits: 4, omittingEmptySubsequences: false)
+            guard fields.count == 5, let index = Int(fields[2]) else { continue }
+            windowsBySession[String(fields[0]), default: []].append(TmuxWindow(
+                id: String(fields[1]), index: index, name: String(fields[4]), isActive: fields[3] == "1"))
+        }
         return sessions.compactMap { line in
-            let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false)
-            guard fields.count == 3 else { return nil }
+            let fields = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
+            guard fields.count == 2 else { return nil }
             let id = String(fields[0])
             return TmuxSession(
                 id: id,
-                name: String(fields[2]),
-                windows: Int(fields[1]) ?? 0,
+                name: String(fields[1]),
+                windows: windowsBySession[id] ?? [],
                 attachedClients: attached[id] ?? 0)
         }
     }
@@ -64,9 +85,11 @@ struct Tmux {
             }
             throw TmuxError(description: sessions.stderr.trimmingCharacters(in: .whitespacesAndNewlines))
         }
+        let windows = try run(Self.listWindowsArgs)
         let clients = try run(Self.listClientsArgs)
         return Self.parseSessions(
             sessions: sessions.stdout.split(separator: "\n").map(String.init),
+            windows: windows.stdout.split(separator: "\n").map(String.init),
             clients: clients.stdout.split(separator: "\n").map(String.init))
     }
 
@@ -117,6 +140,31 @@ struct Tmux {
 
     func killSession(id: String) throws {
         let result = try run(["kill-session", "-t", id])
+        guard result.status == 0 else { throw TmuxError(description: result.stderr) }
+    }
+
+    // Windows are targeted as "$session:@window": a window linked into
+    // several sessions has one id, and the session decides which one changes.
+
+    func selectWindow(sessionID: String, windowID: String) throws {
+        let result = try run(["select-window", "-t", sessionID + ":" + windowID])
+        guard result.status == 0 else { throw TmuxError(description: result.stderr) }
+    }
+
+    /// Opens a new window after the session's last one, in the current
+    /// window's directory, and makes it current.
+    func newWindow(sessionID: String) throws {
+        let result = try run(["new-window", "-a", "-t", sessionID + ":{end}", "-c", "#{pane_current_path}"])
+        guard result.status == 0 else { throw TmuxError(description: result.stderr) }
+    }
+
+    func renameWindow(sessionID: String, windowID: String, to name: String) throws {
+        let result = try run(["rename-window", "-t", sessionID + ":" + windowID, name])
+        guard result.status == 0 else { throw TmuxError(description: result.stderr) }
+    }
+
+    func killWindow(sessionID: String, windowID: String) throws {
+        let result = try run(["kill-window", "-t", sessionID + ":" + windowID])
         guard result.status == 0 else { throw TmuxError(description: result.stderr) }
     }
 

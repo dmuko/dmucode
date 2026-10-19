@@ -10,6 +10,8 @@ import Foundation
 /// main thread.
 final class SessionStore: ObservableObject {
     @Published private(set) var sessions: [TmuxSession] = []
+
+    var selectedSession: TmuxSession? { sessions.first { $0.id == selectedID } }
     @Published var selectedID: String? {
         didSet {
             guard !selectingAutomatically else { return }
@@ -52,12 +54,14 @@ final class SessionStore: ObservableObject {
         "lastSessionName" + (tmux.socketName.map { "-" + $0 } ?? "")
     }
 
-    /// Notifications after which the session list (names, window counts,
-    /// attached clients) may have changed.
+    /// Notifications after which the session list (names, windows, current
+    /// window, attached clients) may have changed. Windows of the control
+    /// client's own session come as %window-*, others as %unlinked-window-*.
     private static let listEvents: Set<String> = [
         "%sessions-changed", "%session-renamed", "%session-changed",
-        "%client-session-changed", "%client-detached",
-        "%window-add", "%window-close", "%unlinked-window-add", "%unlinked-window-close",
+        "%client-session-changed", "%client-detached", "%session-window-changed",
+        "%window-add", "%window-close", "%window-renamed",
+        "%unlinked-window-add", "%unlinked-window-close", "%unlinked-window-renamed",
     ]
 
     init(tmux: Tmux) {
@@ -142,6 +146,19 @@ final class SessionStore: ObservableObject {
                 self.refresh(then: completion)
             }
         }
+    }
+
+    // MARK: Windows
+
+    /// Makes a window the session's current one. The tab moves right away;
+    /// %session-window-changed then confirms it.
+    func selectWindow(_ windowID: String, in sessionID: String) {
+        if let s = sessions.firstIndex(where: { $0.id == sessionID }) {
+            for w in sessions[s].windows.indices {
+                sessions[s].windows[w].isActive = sessions[s].windows[w].id == windowID
+            }
+        }
+        perform { tmux in try tmux.selectWindow(sessionID: sessionID, windowID: windowID) }
     }
 
     // MARK: Control mode
