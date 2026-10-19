@@ -111,6 +111,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let window = NSMenu(title: "Window")
         window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        // ⌃⌘F, the system's and Ghostty's; AppKit retitles it to Exit Full Screen.
+        window.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+            .keyEquivalentModifierMask = [.command, .control]
         window.addItem(withTitle: "Toggle Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
             .keyEquivalentModifierMask = [.command, .control]
         main.addItem(submenu: window, title: "Window")
