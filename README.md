@@ -1,113 +1,190 @@
-# dmucode – tmux-sessiot sivupalkissa, terminaalina libghostty
+# dmucode
 
-Minimaalinen macOS-prototyyppi:
+**A macOS terminal for tmux: your sessions in a sidebar, each one in a native Ghostty terminal.**
 
-- Vasemmassa sivupalkissa näkyvät tmux-palvelimen sessiot. Lista päivittyy tapahtumista tmuxin control mode -yhteyden kautta.
-- Kun klikkaat sessiota, oikealle avautuu Ghostty-terminaali (GhosttyKit), jossa ajetaan `tmux attach-session -t <id>`.
-- Sivupalkki merkitsee kellolla session, jossa soi bell tai joka lähetti ilmoituksen (esim. Claude Code odottaa vastausta). Ilmoituksen teksti näkyy session alla.
-- Session tmux-ikkunat näkyvät tabeina terminaalin yläpuolella. Tabissa näkyy aktiivisen panen hakemisto ja, jos hakemisto on git-repossa, haara ja tila.
-- Splitit ja muun hoitaa tmux itse.
+![dmucode: tmux sessions grouped in the sidebar, the selected session's windows as tabs with git status, and an agent session asking for attention](docs/images/dmucode.jpg)
 
-Sessiot elävät tmux-palvelimessa, eivät sovelluksessa. Sovelluksen sulkeminen vain irrottaa tmux-clientit. Kun sovellus käynnistetään uudestaan, sivupalkki näyttää sessiot taas ja liittyy viimeksi käytettyyn.
+dmucode is a native macOS app built around a tmux server. The sidebar lists the server's sessions and updates live. The selected session runs in a terminal rendered by [libghostty](https://github.com/ghostty-org/ghostty), the engine of the Ghostty terminal, with your Ghostty fonts, theme and settings. The session's tmux windows are shown as tabs.
 
-## Rakentaminen
+Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clients, so your programs keep running. With tmux-resurrect, the sessions also come back after a reboot. This works well for many long-lived sessions, such as several AI coding agents side by side, where you want to see at a glance which one is waiting for you.
 
-Tarvitaan Xcode, tmux ja Zig **0.16.x** (`brew install zig@0.16`). Ghostty vaatii tarkan minor-version, joten Homebrew'n tavallinen `zig` (0.17) ei käy. Skripti löytää `zig@0.16`:n itse, tai polun voi antaa muuttujalla `ZIG=`.
+> **Status:** an early, personal project. It runs only on macOS, and you build it from source. It embeds libghostty through `ghostty.h`, which is Ghostty's internal API, not a stable one. Expect rough edges.
+
+## Features
+
+- **Live session sidebar.** dmucode keeps a tmux control-mode connection, so new, renamed and closed sessions show up immediately, without polling.
+- **Ghostty terminals.** Each session gets its own libghostty surface with your `~/.config/ghostty/config`: fonts, themes, background opacity and blur. Saving the config applies it right away.
+- **Windows as tabs.** Each tab shows the directory of the window's active pane and, inside a git repository, the branch and whether there are changes, conflicts or unpushed commits.
+- **Attention markers.** A session whose terminal rings the bell or sends a desktop notification (OSC 9/777) gets an orange bell and the notification's text, for example when Claude Code is waiting for input. The Dock icon shows how many sessions want attention.
+- **⌘K palette.**
+  - Fuzzy-find any session, window or pane. Panes are found by their title too, where Claude Code writes the topic of its conversation.
+  - Start the line with `:` to run a tmux command.
+- **Your order, remembered.**
+  - Drag sessions into any order and into groups.
+  - Sessions named `group/name` file themselves under `group`.
+  - The order is remembered by session name, so it survives restarts and reboots.
+- **Restore after reboot.** If tmux-resurrect has a save and no tmux server is running, dmucode starts the server so that tmux-continuum restores your sessions.
+
+![The ⌘K palette finding a Claude Code pane by the topic in its title](docs/images/palette.jpg)
+
+## Requirements
+
+- macOS 14 or later.
+- Xcode 16 or later (Swift 6).
+- [tmux](https://github.com/tmux/tmux) 3.2 or later. 3.6 or later is recommended, and dmucode is developed with 3.8.
+- [Zig](https://ziglang.org) **0.16.x**, to build libghostty. Ghostty needs this exact minor version, so Homebrew's current `zig` won't do; install `zig@0.16`.
+
+## Installation
+
+dmucode is built from source. Building libghostty takes about five minutes the first time.
 
 ```bash
+brew install tmux zig@0.16
+
 git clone --recurse-submodules https://github.com/dmuko/dmucode.git
 cd dmucode
-./scripts/build-ghosttykit.sh   # ~5 min, tuottaa GhosttyKit.xcframeworkin
-./scripts/build-app.sh          # tuottaa build/dmucode.app
-open build/dmucode.app
+./scripts/build-ghosttykit.sh   # libghostty → vendor/ghostty/macos/GhosttyKit.xcframework
+./scripts/build-app.sh          # → build/dmucode.app
+
+cp -R build/dmucode.app /Applications/
+open /Applications/dmucode.app
 ```
 
-Yksikkötestit ajetaan komennolla `swift test` ([Tests/dmucodeTests](Tests/dmucodeTests), Swift Testing). Ne kattavat control mode -protokollan jäsentimen, tmuxin lista- ja `git status` -tulosteiden jäsennyksen, ⌘K:n sumean haun ja sivupalkin järjestyksen. Testit tuovat sovelluskohteen `@testable import dmucode` -lauseella, joten ne tarvitsevat GhosttyKitin kuten käännöskin.
+`build-ghosttykit.sh` finds Homebrew's `zig@0.16` by itself; to use another Zig, set `ZIG=/path/to/zig`. The app is signed ad hoc, which is enough to run it on the machine that built it.
 
-Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `431126c` (2026-10-18), jolla prototyyppi on testattu. `ghostty.h` on Ghosttyn sisäinen API ja voi muuttua milloin tahansa. Kun päivität Ghosttyn, aja `build-ghosttykit.sh` uudelleen ja testaa.
+**Updating:**
 
-## Käyttö
+1. Run `git pull` and `git submodule update`.
+2. If the `vendor/ghostty` submodule moved, run `build-ghosttykit.sh` again.
+3. Run `build-app.sh`, copy the app again and relaunch. Your sessions keep running in tmux in the meantime.
 
-| | |
+## Getting started
+
+1. **Launch dmucode.** The sidebar shows the sessions of your default tmux server. If there are none, press **⌘N** to create one; it starts in your home directory.
+2. **Click a session** to attach to it. Inside the terminal it is plain tmux: your prefix key, splits and key bindings work as usual.
+3. **Switch** with ⌘1…⌘9, ⌘↑ / ⌘↓, or **⌘K** and a few letters of a session, window or pane name. ⌘K then Return goes back to the previous session.
+4. **Organize** the sidebar by dragging sessions. To create a group, click the folder button at the bottom of the sidebar, or create a session named `group/name`.
+5. **Quit** whenever you like. Quitting only detaches, and the next launch shows the same sessions and selects the one you used last.
+
+## Usage
+
+### Sidebar
+
+- **Row contents:** each row shows the session's name and its number of windows. A green dot means a terminal is attached to it: dmucode's own once you have opened the session, or one elsewhere. A gray dot means activity in a window, if you use `monitor-activity on` in tmux.
+- **Live indicator:** the dot in the sidebar header is green while updates arrive live over control mode, and gray while dmucode polls because there is no session to connect to yet.
+- **Context menu:** right-click a session for **Rename…**, **Move to Group** and **Kill Session…**. Right-click a group header for **Rename Group…** and **Remove Group**; removing a group keeps its sessions, ungrouped.
+- **Dragging:**
+  - Drag sessions to reorder them. Drop one under a group header to put it in that group, or above the first group to take it out.
+  - Drag a group by its header to move it together with its sessions.
+- **Remembered by name:** the order and groups are stored by session name, separately for each tmux socket.
+  - A session that is killed and later created again with the same name returns to its place, for example after a reboot.
+  - New names are added at the end of the ungrouped sessions, and renaming a session keeps its place.
+- **Automatic groups:** a session named `group/name` files itself.
+  - The first time dmucode sees it, the session goes to the end of the group `group` and is shown there as `name`. The group is created if needed, and an existing group matches regardless of case.
+  - For example, `tmux new -s agents/claude-1` appears as `claude-1` under **agents**.
+  - Renaming a session to a new prefix moves it to that group, and removing the prefix takes it out.
+  - You can still drag such a session anywhere. Outside its group it shows its full name.
+
+### Tabs
+
+- **Contents:** the tabs are the tmux windows of the selected session. A tab shows the window's index and name, the directory of its active pane, and in a git repository:
+  - the branch, or the commit when HEAD is detached
+  - an orange dot for uncommitted changes
+  - a red triangle for conflicts
+  - ↑/↓ counts for commits ahead of or behind the upstream
+
+  Hover over a tab for the full path and the counts.
+- **Actions:** click a tab to select the window. The **+** button (⌘T) opens a new window in the current pane's directory. Right-click a tab for **Rename** and **Close Window**.
+- **Sync with tmux:** switching windows inside tmux (`prefix n`, `prefix 3`…) moves the highlight too.
+
+### The ⌘K palette
+
+**Session mode (⌘K)** fuzzy-matches what you type against:
+
+- session names
+- window names and directories
+- pane titles and programs. Programs such as Claude Code or nvim write their title into the pane; titles that are just the host name or a directory are skipped, and so are plain shells.
+
+Return switches to the match: the session, and the window and pane when one of those matched. With an empty query, the sessions are listed by when you last used them, so ⌘K then Return toggles between the last two.
+
+**Command mode (`:` or ⌘:)** turns the palette into tmux's command prompt. Type `:` as the first character, or open it directly with **⌘:**.
+
+- **Completion and help:** command names complete with Tab and ↑/↓, and the usage of the command you are typing is shown below the field.
+- **Results:** output (for example `display -p '#{pane_id}'` or `list-windows`) and errors appear in the palette. A command without output closes it.
+- **Target:** commands run as the active pane of the shown session, so commands without `-t` act on what you see.
+- **History:** ↑/↓ recall earlier commands when no completions are shown.
+- **Leaving:** ⌫ on an empty command line goes back to session search.
+
+tmux's own `prefix :` still opens tmux's prompt inside the terminal.
+
+### Attention markers
+
+A session that wants attention gets an orange bell in the sidebar. This happens when:
+
+- a bell rang in one of its windows, or
+- a program in it sent a desktop notification (OSC 9 or OSC 777). The notification's text is shown under the session's name.
+
+Showing the session clears the marker. Nothing is marked for the session you are looking at. The Dock icon shows the number of sessions that want attention.
+
+For Claude Code, see [Claude Code notifications](#claude-code-notifications).
+
+### Keyboard shortcuts
+
+| Shortcut | Action |
 |---|---|
-| ⌘N | uusi sessio |
-| ⌘1…⌘9 | hyppää sessioon (sivupalkin järjestyksessä) |
-| ⌘↓ / ⌘↑ | seuraava / edellinen sessio |
-| ⌘R | nimeä sessio uudelleen |
-| ⌃⌘S | näytä / piilota sivupalkki |
-| ⌃⌘F | koko näytön tila (natiivi); ikkuna ja sivupalkki ovat silloin läpinäkymättömiä kuten Ghosttyssa |
-| ⌘K | paletti, sessiotila: sumea haku session nimestä, ikkunan nimestä ja hakemistosta sekä panen otsikosta ja ohjelmasta. Esimerkiksi Claude Code kirjoittaa panen otsikoksi keskustelunsa aiheen. Return valitsee session, ikkunan ja panen. Otsikoita, jotka ovat pelkkä koneen nimi tai hakemisto, ei haeta. Tyhjällä haulla viimeksi käytetty ensin, joten ⌘K ↩ palaa edelliseen sessioon. ⌘K korvaa Ghosttyn `clear_screen`-pikanäppäimen; tmuxissa ruudun tyhjentää `clear` tai C-l. |
-| ⌘K : | paletin komentotila: kun hakuun kirjoittaa ensimmäiseksi merkiksi `:`, paletti muuttuu tmuxin komentoriviksi samassa kentässä. ⌫ tyhjällä komentorivillä palaa sessiohakuun. |
-| ⌘: | avaa paletin suoraan komentotilassa (kuten `prefix :`) |
-| oikea klikkaus | Rename / Move to Group / Kill |
-| session raahaus | järjestä sivupalkki; raahaa ryhmän alle siirtääksesi ryhmään |
-| sivupalkin kansio-painike | uusi ryhmä (ryhmän oikea klikkaus: Rename / Remove) |
-| tabin klikkaus | valitse tmux-ikkuna |
-| ⌘T tai tabipalkin + | uusi tmux-ikkuna nykyisen panen hakemistoon |
-| ⌘W | sulje nykyinen tmux-ikkuna (kysyy ensin) |
-| ⌥⌘R | nimeä nykyinen tmux-ikkuna uudelleen |
-| ⌘→ / ⌘← | seuraava / edellinen tabi |
-| ⌥⌘1…⌥⌘9 | hyppää tabiin (järjestysnumero vasemmalta, ei tmuxin indeksi) |
-| tabin oikea klikkaus | Rename / Close Window |
+| ⌘N | New session |
+| ⌘R | Rename the selected session |
+| ⌘1 … ⌘9 | Go to the session at that position in the sidebar |
+| ⌘↓ / ⌘↑ | Next / previous session |
+| ⌘K | Palette: find a session, window or pane |
+| ⌘: | Palette in command mode (tmux command) |
+| ⌘T | New tmux window (tab) in the current pane's directory |
+| ⌘W | Close the current tmux window (asks first) |
+| ⌥⌘R | Rename the current tmux window |
+| ⌘→ / ⌘← | Next / previous tab |
+| ⌥⌘1 … ⌥⌘9 | Go to the tab at that position (counted from the left, not tmux's index) |
+| ⌃⌘S | Show / hide the sidebar |
+| ⌃⌘F | Native full screen |
+| ⇧⌘, | Reload the Ghostty config |
+| ⌘C / ⌘V | Copy / paste |
 
-Sivupalkin järjestys ja ryhmät muistetaan session nimen perusteella ([SidebarLayout.swift](Sources/dmucode/SidebarLayout.swift)). Jos sessio tapetaan ja samanniminen luodaan myöhemmin, esimerkiksi rebootin jälkeen, se palaa samaan kohtaan ja samaan ryhmään. Uusi nimi tulee ryhmättömien sessioiden loppuun. Kun sessio nimetään uudelleen, se pysyy paikallaan.
+⌘K replaces Ghostty's default `clear_screen` binding. In tmux, `clear` or `C-l` clears the pane.
 
-Muotoa `ryhmä/nimi` oleva sessio ryhmittyy itse. Kun nimi nähdään ensimmäistä kertaa, sessio menee ryhmän `ryhmä` loppuun (ryhmä luodaan tarvittaessa; olemassa oleva ryhmä täsmää kirjainkoosta riippumatta, joten `projects/x` menee ryhmään `Projects`) ja näkyy siellä nimellä `nimi`. Esimerkiksi `tmux new -s agents/claude-1` ilmestyy agents-ryhmään nimellä `claude-1`. Jos session nimeää uudelleen uudella etuliitteellä, se siirtyy kyseiseen ryhmään. Jos etuliitteen poistaa, sessio siirtyy pois ryhmästä. Muuten sessiota voi raahata vapaasti. Muualle raahattuna se näkyy koko nimellään. Ryhmän voi raahata otsikosta, jolloin ryhmän sessiot tulevat mukana. Ryhmä asettuu aina ryhmien väliin, koska ryhmättömät sessiot ovat ylimpänä. Järjestys tallennetaan tmux-socketeittain sovelluksen asetuksiin.
+## Configuration
 
-Ghostty-asetukset (fontti, teema) luetaan tiedostosta `~/.config/ghostty/config`. Konfiguraatio latautuu uudelleen ilman sovelluksen uudelleenkäynnistystä kolmella tavalla:
+### Ghostty
 
-- **Tallennus:** kun `config`, `config.ghostty` tai tiedosto `themes/`-hakemistossa tallennetaan hakemistoon `~/.config/ghostty` (tai `$XDG_CONFIG_HOME/ghostty`) tai `~/Library/Application Support/com.mitchellh.ghostty` ([ConfigWatcher.swift](Sources/dmucode/ConfigWatcher.swift)). Muualta `config-file`-rivillä tuotuja tiedostoja ei seurata.
-- **⌘⇧,** (dmucode → Reload Ghostty Config).
-- **Ghosttyn oma `reload_config`-pikanäppäin.**
+dmucode reads the Ghostty config the way Ghostty does: `~/.config/ghostty/config` (or `config.ghostty`, or under `$XDG_CONFIG_HOME/ghostty`), then `~/Library/Application Support/com.mitchellh.ghostty/config`. Fonts, colors, `theme`, `background-opacity` and `background-blur` apply to the terminals. The sidebar, tab bar and title bar take the theme's background color, and the window's light or dark appearance follows it.
 
-Terminaalit, sivupalkki, otsikko- ja tabipalkki sekä ikkunan tausta saavat uudet värit, ja ikkunan ulkoasu (tumma tai vaalea) seuraa taustaväriä. Jos konfiguraatiossa on virheitä, libghostty ohittaa virheelliset rivit ja ottaa muut käyttöön kuten Ghostty. dmucode näyttää ohitetut rivit ikkunan päälle avautuvassa ilmoituksessa.
+The config reloads without restarting in three ways:
 
-Claude Code -ilmoituksia varten lisää tiedostoon `~/.claude/settings.json` jokaisella koneella rivi `"preferredNotifChannel": "iterm2_with_bell"`. Silloin sivupalkin kello syttyy kaikissa sessioissa ja ikkunoissa, ja ilmoituksen teksti näkyy session alla (ks. [Control mode -yhteys](#control-mode--yhteys)).
+- **Saving it:** changes to `config`, `config.ghostty` or a file under `themes/` in those directories apply right away. Files pulled in with `config-file` from elsewhere aren't watched.
+- **⇧⌘,** (*dmucode → Reload Ghostty Config*).
+- **Ghostty's own `reload_config` keybinding.**
 
-Ympäristömuuttujat:
+Lines with errors are skipped and the rest applies, as in Ghostty, and a sheet lists the skipped lines. In native full screen the window and sidebar are opaque, as in Ghostty.
 
-- `DMUCODE_TMUX_SOCKET=nimi` käyttää erillistä tmux-palvelinta (`tmux -L nimi`). Hyödyllinen testaukseen, ettei oikeisiin sessioihin kosketa.
-- `DMUCODE_TMUX=/polku/tmux` ohittaa tmuxin automaattisen etsinnän.
-- `DMUCODE_RESURRECT_DIR=hakemisto` vaihtaa hakemiston, josta tmux-resurrectin tallennusta etsitään (testejä varten).
-- `DMUCODE_DEBUG_DIR=hakemisto` kytkee testikoukun päälle (komennot `snapshot`, `state`, `pixels`, `type`, `ctrl`, `key`, `press`, `reload`, `select`, `move`, `group`, `ungroup`, `togroup`, `tab`, `newtab`, `cmdbar`, `new`). Katso [DebugHooks.swift](Sources/dmucode/DebugHooks.swift): koukulla voi ottaa ikkunasta kuvan ja syöttää näppäilyjä ilman Accessibility- tai Screen Recording -oikeuksia.
+### tmux
 
-## Rakenne
+dmucode works with your existing tmux configuration. A few settings make it work better:
 
-- [TerminalView.swift](Sources/dmucode/TerminalView.swift): yksi Ghostty-surface NSView'ssä. Näppäimistö kulkee `interpretKeyEvents`in kautta, jotta kuolleet näppäimet ja IME toimivat. Lisäksi hiiri, vieritys ja koko.
-- [GhosttyRuntime.swift](Sources/dmucode/GhosttyRuntime.swift): `ghostty_app_t`, konfiguraatio, leikepöytä ja Ghosttyn action-callbackit.
-- [Tmux.swift](Sources/dmucode/Tmux.swift) ja [SessionStore.swift](Sources/dmucode/SessionStore.swift): tmux-CLI-kääre ja sivupalkin malli.
-- [MainWindowController.swift](Sources/dmucode/MainWindowController.swift) ja [SidebarView.swift](Sources/dmucode/SidebarView.swift): ikkuna, sivupalkki ja terminaalinäkymien vaihto.
-- [TabBarView.swift](Sources/dmucode/TabBarView.swift): valitun session tmux-ikkunat tabeina.
-- [GitStatus.swift](Sources/dmucode/GitStatus.swift): tabien git-tila.
-- [Palette.swift](Sources/dmucode/Palette.swift): ⌘K-paletti, jossa yksi kenttä ja kaksi tilaa.
-- [CommandBar.swift](Sources/dmucode/CommandBar.swift): paletin komentotila (tmux-komentorivi).
-- [SidebarLayout.swift](Sources/dmucode/SidebarLayout.swift): sivupalkin järjestys ja ryhmät session nimien mukaan.
-- [SessionSwitcher.swift](Sources/dmucode/SessionSwitcher.swift) ja [FuzzyMatch.swift](Sources/dmucode/FuzzyMatch.swift): paletin sessiotila ja sen sumea haku.
-- [GhosttyInput.swift](Sources/dmucode/GhosttyInput.swift): näppäinten muunnokset, sovitettu Ghosttyn macOS-sovelluksesta (MIT).
-- [scripts/make-icon.swift](scripts/make-icon.swift): piirtää sovelluksen ikonin (D ja C osittain päällekkäin) CoreGraphicsilla. Käytössä on paletti `mocha`. Ikoni luodaan uudelleen komennolla `swift scripts/make-icon.swift icns mocha Resources/AppIcon.icns`, ja kaikkien palettien vertailukuva komennolla `swift scripts/make-icon.swift preview build/icon-preview.png`.
+```tmux
+# Lets notifications (OSC 9/777) from programs in tmux reach dmucode.
+set -g allow-passthrough on
 
-## Control mode -yhteys
+# Optional: a dot in the sidebar and on tabs for windows with new output.
+setw -g monitor-activity on
 
-Sovellus pitää yllä yhtä `tmux -C attach-session` -clientia ([TmuxControlClient.swift](Sources/dmucode/TmuxControlClient.swift)) ja kuuntelee sen ilmoituksia: `%sessions-changed`, `%session-renamed`, `%window-add`/`-close`/`-renamed`, `%unlinked-window-*`, `%session-window-changed`, `%subscription-changed`, `%client-session-changed` ja `%client-detached`. Jokainen ilmoitus käynnistää uuden kyselyn (`list-sessions` + `list-windows -a` + `list-clients`) samaa yhteyttä pitkin. Saman purskeen ilmoitukset niputetaan 50 ms:n sisällä.
+# Optional: dmucode shows windows as tabs, so tmux's status line can go.
+# (Read the note on tmux-continuum below before turning it off.)
+set -g status off
+```
 
-- **Liputukset:** client asettaa `no-output` (panejen tuloste ei virtaa sovellukseen), `ignore-size` (ei vaikuta ikkunoiden kokoon) ja `no-detach-on-destroy` (jos sen oma sessio tapetaan, se siirtyy toiseen sessioon eikä katkea).
-- **Ilman sessioita:** control-clientin on pakko liittyä johonkin sessioon. Kun palvelinta tai sessioita ei ole, sovellus pollaa CLI:tä kerran sekunnissa ja yhdistää heti, kun sessio ilmestyy. Sivupalkin otsikon vihreä pallo tarkoittaa tapahtumapohjaista tilaa, harmaa pollausta.
-- **Jumiutunut yhteys:** prosessin päättyminen tai EOF ei paljasta yhteyttä, joka on jumissa mutta auki. Siksi sovellus lähettää 10 sekunnin välein no-op-komennon (`display-message -p ok`), jos mikään komento ei odota vastausta. Jos vanhin vastaus on yli 5 sekuntia myöhässä, client tapetaan ja sovellus pollaa, kunnes yhteys aukeaa uudelleen. Jumi huomataan siis 10–20 sekunnissa. tmux-client antaa stdininsä ja stdoutinsa palvelimelle, joka lukee ja kirjoittaa niitä suoraan, joten jumi syntyy palvelimen päässä: client-prosessin pysäyttäminen (`kill -STOP`) ei jumita yhteyttä, palvelimen pysäyttäminen jumittaa.
-- **Loki:** yhteyden avaus, päättyminen ja jumit kirjataan järjestelmälokiin: `/usr/bin/log show --last 1h --predicate 'subsystem == "com.dmuko.dmucode"'`. Ilmoitukset ja lähetetyt komennot kirjataan debug-tasolla, jota ei tallenneta; ne näkee livenä komennolla `/usr/bin/log stream --level debug --predicate 'subsystem == "com.dmuko.dmucode"'`. Polku `/usr/bin/log` tarvitaan zsh:ssa, jossa `log` on sisäänrakennettu komento.
-- **Session vaihto tmuxin sisällä:** `%client-session-changed` kertoo clientin tty:n. Jos se on jonkin terminaalin tty (`ghostty_surface_tty_name`), terminaali siirretään uuden session alle ja sivupalkki seuraa (`prefix s`, `switch-client`).
-- **Tabien hakemisto ja git:** `cd` ei tuota ilmoitusta, joten client tilaa tmuxilta formaatin (`refresh-client -B`), joka sisältää jokaisen ikkunan `pane_current_path`in kaikista sessioista. tmux tarkistaa tilauksen noin kerran sekunnissa ja lähettää muutoksesta `%subscription-changed`-ilmoituksen. Valitun session hakemistoille ajetaan `git --no-optional-locks status --porcelain=v2 --branch` heti, kun hakemistot muuttuvat, ja sen jälkeen 3 sekunnin välein, koska tiedostojen muokkauksesta ei tule tapahtumaa. Tabissa näkyy haara (irrotetussa tilassa commit), oranssi pallo jos muutoksia on, punainen kolmio jos konflikteja on, ja ↑/↓ ahead/behind-luvuille. Tooltipissa on koko polku ja muutosten määrät.
-- **Huomiomerkit:** merkillä on kaksi lähdettä.
-  - **dmucoden omat terminaalit:** libghostty kertoo bellistä (`RING_BELL`) ja työpöytäilmoituksesta (`DESKTOP_NOTIFICATION`, OSC 9 tai OSC 777). tmux välittää session minkä tahansa ikkunan bellin sen clienteille, mutta OSC-ilmoitukset kulkevat tmuxin passthroughin kautta vain, kun pane on session nykyisessä ikkunassa. `allow-passthrough all` ei auta, koska tmux kirjoittaa passthroughin vain clienteille, jotka näyttävät panen. Merkki poistuu, kun sessio on valittuna ja dmucode on edessä. Jos käyttäjä katsoo jo sessiota, merkkiä ei tule.
-  - **tmuxin liput:** `window_bell_flag` ja `window_activity_flag` (jälkimmäinen vain `monitor-activity on`:lla) tulevat samassa tilauksessa kuin polut. Ne kattavat sessiot, joille dmucodessa ei ole terminaalia, sekä muut kuin nykyiset ikkunat. tmux nollaa ne, kun ikkuna valitaan tai sessioon liitytään.
-  - **Dockin ikoni** näyttää huomiota haluavien sessioiden määrän.
-- **Claude Code:** oletusasetuksella (`auto`) Claude Code tunnistaa Ghosttyn tmuxin sisältä `TERM=xterm-ghostty`:stä (tmuxin `default-terminal`). Silloin se lähettää OSC 777 -ilmoituksen tmux-passthroughilla (`allow-passthrough on` tarvitaan). Tämä tavoittaa dmucoden vain, kun Claude on session nykyisessä ikkunassa ja sessio on avattu dmucodessa. Kattavampi asetus on `preferredNotifChannel: iterm2_with_bell`: se lähettää OSC 9 -ilmoituksen (teksti) ja bellin, ja bell näkyy tmuxin lipuista myös avaamattomissa sessioissa ja muissa ikkunoissa.
-- **Paletin komentotila (⌘K :, ⌘:):** natiivi vastine tmuxin `prefix :` -kehotteelle. Rivin jäsentää tmux (`tmux source-file -`), ja se ajetaan ympäristömuuttujalla `TMUX_PANE` asetettuna näytetyn session aktiiviseen paneen. tmux pitää silloin sitä panea nykyisenä, joten komennot ilman `-t`:tä kohdistuvat siihen, mitä terminaali näyttää. Clientia tarvitsevat komennot (`detach-client`, `switch-client`) kohdistuvat sen session clientiin eli dmucoden terminaaliin. Palkki täydentää komentojen nimet `list-commands`:sta (Tab, ↑/↓), näyttää kirjoitettavan komennon käyttöohjeen sekä näyttää tulosteen (esim. `display -p`, `list-windows`) ja virheet. Historia säilyy (↑/↓, kun ehdotuksia ei ole). tmux ei ilmoita control modessa `:`-kehotteen avaamisesta, joten `prefix :` avaa edelleen tmuxin oman kehotteen.
-- **Tabit:** tabit ovat valitun session ikkunat `list-windows -a`:sta. Tabin klikkaus ajaa `select-window -t $session:@ikkuna`, ja tabi vaihtuu heti. Kun ikkunaa vaihdetaan tmuxin sisällä (`prefix n`, `prefix 3`…), `%session-window-changed` siirtää korostuksen. Ikkunan valinta vaikuttaa kaikkiin samaan sessioon liitettyihin clienteihin, kuten tmuxissa muutenkin.
-- **Sivuvaikutus:** control-client näkyy tmuxissa liitettynä clientina. `tmux ls` merkitsee yhden session "(attached)":ksi, ja tmux-konfiguraation `client-attached`-hookit ajetaan. Sivupalkin "attached"-laskuri ei laske control-clienteja.
+If your config sets `default-terminal "xterm-ghostty"` and dmucode starts the tmux server, the server gets a `TERMINFO` that points into the app bundle, so the terminfo entry is found.
 
-## Säilyminen rebootin yli
+### Restoring sessions after a reboot
 
-Sessiot elävät tmux-palvelimessa, joten ne säilyvät, kun sovellus käynnistetään uudelleen. Rebootin yli ne säilyvät tmux-resurrectin ja tmux-continuumin avulla. tmux-konfiguraatioon (tpm) lisätään:
+Install [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) and [tmux-continuum](https://github.com/tmux-plugins/tmux-continuum), for example with [tpm](https://github.com/tmux-plugins/tpm):
 
 ```tmux
 set -g @plugin 'tmux-plugins/tmux-resurrect'
@@ -116,10 +193,11 @@ set -g @resurrect-capture-pane-contents 'on'
 set -g @continuum-restore 'on'
 ```
 
-Pluginit pitää myös asentaa: `prefix I` tai `~/.config/tmux/plugins/tpm/bin/install_plugins`. tpm ei asenna niitä itsestään. Toimivuuden voi tarkistaa näin: `prefix C-s` tallentaa, ja tiedoston `~/.local/share/tmux/resurrect/last` pitää ilmestyä.
+tpm doesn't install plugins by itself: press `prefix I`, or run `~/.config/tmux/plugins/tpm/bin/install_plugins`. To check that saving works, press `prefix C-s`; the file `~/.local/share/tmux/resurrect/last` should appear.
 
-- **Tallennus:** continuum tallentaa 15 minuutin välein ja palauttaa viimeisimmän tallennuksen, kun tmux-palvelin käynnistyy.
-- **Ilman status-riviä (`set -g status off`):** continuum tallentaa vain status-rivin päivityksen yhteydessä (`#(continuum_save.sh)` `status-right`:ssä), joten ilman status-riviä automaattinen tallennus ei toimi. Palautus toimii silti. Tallennus korvataan silmukalla. Silmukka saa tmuxilta oman palvelimensa `$TMUX`:n ja sammuu palvelimen mukana, ja optio estää uuden silmukan syntymisen, kun konfiguraatio ladataan uudelleen:
+- **Saving:** continuum saves every 15 minutes and restores the latest save when the tmux server starts.
+- **Restoring at launch:** if dmucode launches when no tmux server is running and a save exists, it starts the server so that continuum restores the sessions. Meanwhile it shows "Restoring tmux sessions…", and afterwards it selects the session you used last.
+- **Without a status line:** continuum only saves when the status line redraws, so with `set -g status off` it never saves. Restoring still works. Replace the automatic saving with a loop that stops with the server and isn't started twice when the config is reloaded:
 
   ```tmux
   if -F '#{@autosave-loop}' '' {
@@ -127,18 +205,80 @@ Pluginit pitää myös asentaa: `prefix I` tai `~/.config/tmux/plugins/tpm/bin/i
     run-shell -b 'while tmux has-session 2>/dev/null; do sleep 900; ~/.config/tmux/plugins/tmux-resurrect/scripts/save.sh quiet; done'
   }
   ```
-- **dmucode käynnistää palautuksen:** jos palvelin ei ole käynnissä ja tallennus löytyy (`~/.local/share/tmux/resurrect/last` tai `~/.tmux/resurrect/last`), dmucode käynnistää palvelimen väliaikaisella sessiolla. Continuum palauttaa sessiot, ja resurrect poistaa väliaikaisen session `0`.
-- **Käyttöliittymä palautuksen aikana:** sovellus näyttää tekstin "Restoring tmux sessions…" eikä näytä väliaikaista sessiota. Palautuksen jälkeen valituksi tulee viimeksi käytetty sessio. Viimeksi käytetty sessio muistetaan nimellä ja erikseen jokaiselle tmux-socketille.
-- **Jos palautusta ei tule 20 sekunnissa:** väliaikainen sessio näytetään tavallisena sessiona.
 
-## Huomioita
+### Claude Code notifications
 
-- **Wait-after-command:** libghostty pakottaa `wait-after-command`in päälle, kun surfacelle annetaan komento. Siksi tmux-clientin poistuminen käsitellään `SHOW_CHILD_EXITED`-actionista. Muuten jäljelle jäisi "Press any key" -ruutu.
-- **TERMINFO:** jos tmux-konfiguraatiossa on `default-terminal xterm-ghostty` ja sovellus käynnistää tmux-palvelimen itse, palvelimelle annetaan `TERMINFO`, joka osoittaa bundlen terminfo-hakemistoon.
+To get the attention marker with Claude Code's message in every session and window, add this to `~/.claude/settings.json` on each machine:
 
-## Tunnetut rajoitukset
+```json
+"preferredNotifChannel": "iterm2_with_bell"
+```
 
-- **Continuumin vartija:** continuum ohittaa sekä palautuksen että automaattitallennuksen, jos se luulee toisen tmux-palvelimen olevan käynnissä. Se laskee prosessit, joiden komentorivi alkaa sanalla `tmux`. dmucode kutsuu tmuxia absoluuttisella polulla, joten sen prosessit eivät näy tässä laskussa, mutta esimerkiksi erillinen `tmux -L` -palvelin estää palautuksen.
-- **Mukautettu tallennushakemisto:** `@resurrect-dir` ei ole tuettu palautuksen käynnistyksessä, koska asetusta ei voi lukea ennen kuin palvelin on käynnissä.
-- **Ikkunoiden järjestys:** `swap-window` ei lähetä control mode -ilmoitusta, joten tabien järjestys päivittyy vasta seuraavan tapahtuman (esim. ikkunan vaihdon) jälkeen.
-- **Puuttuvat ominaisuudet:** tabeja ei voi vielä raahata, ja bell-/activity-merkinnät puuttuvat. Myös `flagsChanged`-modifier-tapahtumat, osoitinmuodot ja asetusikkuna puuttuvat.
+Claude Code then sends its message (OSC 9) and a bell. By default (`auto`) it sends only OSC 777 through tmux passthrough, and tmux delivers that only from the session's current window, to clients that show it. The bell is also recorded by tmux, so it reaches dmucode from any window and any session. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#attention-markers) has the details.
+
+### Environment variables
+
+| Variable | Effect |
+|---|---|
+| `DMUCODE_TMUX_SOCKET=name` | Use a separate tmux server (`tmux -L name`), e.g. to try things without touching your sessions. |
+| `DMUCODE_TMUX=/path/to/tmux` | Use this tmux instead of looking in `/opt/homebrew/bin`, `/usr/local/bin` and `/usr/bin`. |
+| `DMUCODE_RESURRECT_DIR=dir` | Look for the tmux-resurrect save here (for tests). |
+| `DMUCODE_DEBUG_DIR=dir` | Enable the debug hook (see [Development](#development)). |
+
+## Troubleshooting
+
+- **The sidebar stops updating.** Check the dot in the sidebar header: green means a live connection. dmucode notices a stalled connection within about 20 seconds and reconnects. The connection's events are in the system log:
+
+  ```bash
+  /usr/bin/log show --last 1h --predicate 'subsystem == "com.dmuko.dmucode"'
+  ```
+
+  Use `/usr/bin/log` in zsh, where `log` is a builtin. Use `stream --level debug` instead of `show --last 1h` to watch every tmux notification live.
+- **"tmux not found".** Apps started from Finder don't get your shell's `PATH`. Install tmux with Homebrew or set `DMUCODE_TMUX`.
+- **No attention marker from Claude Code.** Set `allow-passthrough on` in tmux and `preferredNotifChannel` as above.
+- **Sessions aren't restored after a reboot.**
+  - Check that both plugins are installed and that `~/.local/share/tmux/resurrect/last` exists.
+  - continuum skips restoring when it thinks another tmux server is running, for example a `tmux -L` server started at login.
+- **⌘K doesn't clear the screen any more.** It opens the palette; use `clear` or `C-l` in tmux.
+- **`prefix :` opens tmux's prompt, not the palette.** tmux doesn't tell control-mode clients that its prompt opened. Use ⌘: for the palette.
+
+## Known limitations
+
+- **Unstable Ghostty API:** libghostty's embedding API (`ghostty.h`) is internal and changes without notice. The submodule is pinned to a tested Ghostty commit.
+- **Fixed tmux-resurrect directory:** a custom `@resurrect-dir` isn't supported for restoring at launch, because it can't be read before the server runs.
+- **Tab order:** `swap-window` sends no control-mode notification, so the tab order updates only after the next event.
+- **Missing features:** tabs can't be dragged, there is no settings window, and modifier-only key events (`flagsChanged`) and mouse pointer shapes aren't passed to the terminal yet.
+- **Shared tmux state:** dmucode's control client counts as an attached client in tmux (`tmux ls` shows a session as attached), and your `client-attached` hooks run for it.
+
+## Development
+
+```bash
+swift build             # debug build (the app bundle comes from scripts/build-app.sh)
+swift test              # unit tests (Swift Testing)
+```
+
+- **Tests:** the unit tests cover the parsers (tmux control mode, tmux list output, `git status`), the palette's fuzzy matching, the sidebar layout and the settings migration. They import the app target with `@testable import dmucode`, so they need GhosttyKit like the build does.
+- **Trying changes safely:** run a second instance against its own tmux server, so your real sessions aren't touched:
+
+  ```bash
+  tmux -L dev new-session -d
+  DMUCODE_TMUX_SOCKET=dev build/dmucode.app/Contents/MacOS/dmucode
+  ```
+
+- **Debug hook:** with `DMUCODE_DEBUG_DIR=dir`, the app runs commands written to `dir/cmd`. It can take snapshots of the window, type keys, run menu shortcuts, drive the palette and dump its state, all without Accessibility or Screen Recording permissions. The commands are listed in [DebugHooks.swift](Sources/dmucode/DebugHooks.swift).
+- **Updating Ghostty:** move the `vendor/ghostty` submodule, run `build-ghosttykit.sh` and test, since `ghostty.h` may have changed.
+- **App icon:** [scripts/make-icon.swift](scripts/make-icon.swift) draws it. `swift scripts/make-icon.swift icns mocha Resources/AppIcon.icns` writes the icon, and `swift scripts/make-icon.swift preview build/icon-preview.png` writes a comparison of all palettes.
+
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes how dmucode works: the source layout, the control-mode connection, attention markers, the palette's command mode, restoring at launch and the libghostty details.
+
+## Acknowledgements
+
+- [Ghostty](https://github.com/ghostty-org/ghostty) by Mitchell Hashimoto and contributors renders every terminal (MIT license). [GhosttyInput.swift](Sources/dmucode/GhosttyInput.swift) is adapted from Ghostty's macOS app.
+- [tmux](https://github.com/tmux/tmux), whose control mode makes the live sidebar possible.
+- [tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) and [tmux-continuum](https://github.com/tmux-plugins/tmux-continuum) for surviving reboots.
+
+## License
+
+dmucode is released under the [MIT License](LICENSE).
+
+Ghostty, included as a submodule in `vendor/ghostty`, and the code adapted from it in [GhosttyInput.swift](Sources/dmucode/GhosttyInput.swift) are MIT licensed by Mitchell Hashimoto and the Ghostty contributors; their notice is kept in that file and in [Ghostty's LICENSE](https://github.com/ghostty-org/ghostty/blob/main/LICENSE).
