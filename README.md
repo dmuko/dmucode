@@ -4,7 +4,7 @@ Minimaalinen macOS-prototyyppi:
 
 - Vasemmassa sivupalkissa näkyvät tmux-palvelimen sessiot. Lista päivittyy tapahtumista tmuxin control mode -yhteyden kautta.
 - Kun klikkaat sessiota, oikealle avautuu Ghostty-terminaali (GhosttyKit), jossa ajetaan `tmux attach-session -t <id>`.
-- Session tmux-ikkunat näkyvät tabeina terminaalin yläpuolella.
+- Session tmux-ikkunat näkyvät tabeina terminaalin yläpuolella. Tabissa näkyy aktiivisen panen hakemisto ja, jos hakemisto on git-repossa, haara ja tila.
 - Splitit ja muun hoitaa tmux itse.
 
 Sessiot elävät tmux-palvelimessa, eivät sovelluksessa. Sovelluksen sulkeminen vain irrottaa tmux-clientit. Kun sovellus käynnistetään uudestaan, sivupalkki näyttää sessiot taas ja liittyy viimeksi käytettyyn.
@@ -57,6 +57,7 @@ Ympäristömuuttujat:
 - [Tmux.swift](Sources/dmucode/Tmux.swift) ja [SessionStore.swift](Sources/dmucode/SessionStore.swift): tmux-CLI-kääre ja sivupalkin malli.
 - [MainWindowController.swift](Sources/dmucode/MainWindowController.swift) ja [SidebarView.swift](Sources/dmucode/SidebarView.swift): ikkuna, sivupalkki ja terminaalinäkymien vaihto.
 - [TabBarView.swift](Sources/dmucode/TabBarView.swift): valitun session tmux-ikkunat tabeina.
+- [GitStatus.swift](Sources/dmucode/GitStatus.swift): tabien git-tila.
 - [GhosttyInput.swift](Sources/dmucode/GhosttyInput.swift): näppäinten muunnokset, sovitettu Ghosttyn macOS-sovelluksesta (MIT).
 - [scripts/make-icon.swift](scripts/make-icon.swift): piirtää sovelluksen ikonin (D ja C osittain päällekkäin) CoreGraphicsilla. Käytössä on paletti `mocha`. Ikoni luodaan uudelleen komennolla `swift scripts/make-icon.swift icns mocha Resources/AppIcon.icns`, ja kaikkien palettien vertailukuva komennolla `swift scripts/make-icon.swift preview build/icon-preview.png`.
 
@@ -67,6 +68,7 @@ Sovellus pitää yllä yhtä `tmux -C attach-session` -clientia ([TmuxControlCli
 - **Liputukset:** client asettaa `no-output` (panejen tuloste ei virtaa sovellukseen), `ignore-size` (ei vaikuta ikkunoiden kokoon) ja `no-detach-on-destroy` (jos sen oma sessio tapetaan, se siirtyy toiseen sessioon eikä katkea).
 - **Ilman sessioita:** control-clientin on pakko liittyä johonkin sessioon. Kun palvelinta tai sessioita ei ole, sovellus pollaa CLI:tä kerran sekunnissa ja yhdistää heti, kun sessio ilmestyy. Sivupalkin otsikon vihreä pallo tarkoittaa tapahtumapohjaista tilaa, harmaa pollausta.
 - **Session vaihto tmuxin sisällä:** `%client-session-changed` kertoo clientin tty:n. Jos se on jonkin terminaalin tty (`ghostty_surface_tty_name`), terminaali siirretään uuden session alle ja sivupalkki seuraa (`prefix s`, `switch-client`).
+- **Tabien hakemisto ja git:** `cd` ei tuota ilmoitusta, joten client tilaa tmuxilta formaatin (`refresh-client -B`), joka sisältää jokaisen ikkunan `pane_current_path`in kaikista sessioista. tmux tarkistaa tilauksen noin kerran sekunnissa ja lähettää muutoksesta `%subscription-changed`-ilmoituksen. Valitun session hakemistoille ajetaan `git --no-optional-locks status --porcelain=v2 --branch` heti, kun hakemistot muuttuvat, ja sen jälkeen 3 sekunnin välein, koska tiedostojen muokkauksesta ei tule tapahtumaa. Tabissa näkyy haara (irrotetussa tilassa commit), oranssi pallo jos muutoksia on, punainen kolmio jos konflikteja on, ja ↑/↓ ahead/behind-luvuille. Tooltipissa on koko polku ja muutosten määrät.
 - **Tabit:** tabit ovat valitun session ikkunat `list-windows -a`:sta. Tabin klikkaus ajaa `select-window -t $session:@ikkuna`, ja tabi vaihtuu heti. Kun ikkunaa vaihdetaan tmuxin sisällä (`prefix n`, `prefix 3`…), `%session-window-changed` siirtää korostuksen. Ikkunan valinta vaikuttaa kaikkiin samaan sessioon liitettyihin clienteihin, kuten tmuxissa muutenkin.
 - **Sivuvaikutus:** control-client näkyy tmuxissa liitettynä clientina. `tmux ls` merkitsee yhden session "(attached)":ksi, ja tmux-konfiguraation `client-attached`-hookit ajetaan. Sivupalkin "attached"-laskuri ei laske control-clienteja.
 

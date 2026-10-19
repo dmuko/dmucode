@@ -18,6 +18,8 @@ struct TmuxWindow: Identifiable, Equatable {
     let name: String
     /// The session's current window.
     var isActive: Bool
+    /// The working directory of the window's active pane.
+    let path: String
 }
 
 struct TmuxError: Error, CustomStringConvertible {
@@ -44,11 +46,12 @@ struct Tmux {
     var globalArgs: [String] { socketName.map { ["-L", $0] } ?? [] }
 
     // The sidebar and tab bar query, shared by the CLI and the control-mode
-    // client. Names go last so they may contain spaces; control clients
-    // (our own `tmux -C`) are not counted as attached.
+    // client. Names go last so they may contain spaces, and window fields
+    // are tab-separated because paths may too; control clients (our own
+    // `tmux -C`) are not counted as attached.
     static let listSessionsArgs = ["list-sessions", "-F", "#{session_id} #{session_name}"]
     static let listWindowsArgs = ["list-windows", "-a", "-F",
-                                  "#{session_id} #{window_id} #{window_index} #{window_active} #{window_name}"]
+                                  "#{session_id}\t#{window_id}\t#{window_index}\t#{window_active}\t#{pane_current_path}\t#{window_name}"]
     static let listClientsArgs = ["list-clients", "-F", "#{session_id} #{client_control_mode}"]
 
     static func parseSessions(sessions: [String], windows: [String], clients: [String]) -> [TmuxSession] {
@@ -59,10 +62,11 @@ struct Tmux {
         }
         var windowsBySession: [String: [TmuxWindow]] = [:]
         for line in windows {
-            let fields = line.split(separator: " ", maxSplits: 4, omittingEmptySubsequences: false)
-            guard fields.count == 5, let index = Int(fields[2]) else { continue }
+            let fields = line.split(separator: "\t", maxSplits: 5, omittingEmptySubsequences: false)
+            guard fields.count == 6, let index = Int(fields[2]) else { continue }
             windowsBySession[String(fields[0]), default: []].append(TmuxWindow(
-                id: String(fields[1]), index: index, name: String(fields[4]), isActive: fields[3] == "1"))
+                id: String(fields[1]), index: index, name: String(fields[5]), isActive: fields[3] == "1",
+                path: String(fields[4])))
         }
         return sessions.compactMap { line in
             let fields = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
