@@ -44,20 +44,46 @@ public struct GitStatus: Equatable {
 
 /// Git status per directory, for the tabs of the selected session. Updated
 /// when the set of directories changes and every few seconds after that,
-/// since edits to files send no event. Directories outside a repository map
-/// to nil. Published state is touched on the main thread.
+/// since edits to files send no event. The polling pauses while the app is in
+/// the background or its window is hidden (`setActive`) and catches up at
+/// once on resuming; new directories still get one update while paused.
+/// Directories outside a repository map to nil. Published state is touched on
+/// the main thread.
 public final class GitStatusStore: ObservableObject {
+    /// Starts a repeating timer and returns the function that stops it.
+    typealias Schedule = (_ interval: TimeInterval, _ fire: @escaping () -> Void) -> () -> Void
+    /// Runs `git status` for a directory (blocking). Arguments: git, path.
+    typealias Runner = (String, String) -> GitStatus?
+
     @Published public private(set) var statuses: [String: GitStatus] = [:]
+    /// Polling is suspended; see `setActive`.
+    public private(set) var isPaused = false
 
     private let git: String?
-    private let queue = DispatchQueue(label: "dmucode.git")
+    private let interval: TimeInterval
+    private let schedule: Schedule
+    private let runner: Runner
+    private let workQueue: DispatchQueue
+    private let mainQueue: DispatchQueue
     private var paths: Set<String> = []
-    private var timer: Timer?
+    private var cancelTimer: (() -> Void)?
     private var running = false
+    /// An update was asked for while one was running.
+    private var rerun = false
 
-    public init() {
-        git = ["/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"]
-            .first { FileManager.default.isExecutableFile(atPath: $0) }
+    public convenience init() {
+        self.init(git: ExecutableLookup().find("git"), interval: 3, schedule: Self.scheduleTimer,
+                  runner: Self.status, workQueue: DispatchQueue(label: "dmucode.git"), mainQueue: .main)
+    }
+
+    init(git: String?, interval: TimeInterval, schedule: @escaping Schedule, runner: @escaping Runner,
+         workQueue: DispatchQueue, mainQueue: DispatchQueue) {
+        self.git = git
+        self.interval = interval
+        self.schedule = schedule
+        self.runner = runner
+        self.workQueue = workQueue
+        self.mainQueue = mainQueue
     }
 
     /// The directories to keep up to date; others are dropped.
@@ -65,31 +91,64 @@ public final class GitStatusStore: ObservableObject {
         guard newPaths != paths else { return }
         paths = newPaths
         statuses = statuses.filter { newPaths.contains($0.key) }
+        // New directories get a status even while paused, but no timer.
         update()
-        if timer == nil {
-            timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.update() }
+        if !isPaused { startTimer() }
+    }
+
+    /// Whether anyone is looking: false while the app is in the background or
+    /// the window is minimized or hidden. Inactive stops the timer; becoming
+    /// active again updates at once and restarts it.
+    public func setActive(_ active: Bool) {
+        guard active == isPaused else { return }
+        isPaused = !active
+        if active {
+            guard !paths.isEmpty else { return }
+            update()
+            startTimer()
+        } else {
+            cancelTimer?()
+            cancelTimer = nil
         }
     }
 
+    private func startTimer() {
+        guard cancelTimer == nil else { return }
+        cancelTimer = schedule(interval) { [weak self] in self?.update() }
+    }
+
+    private static func scheduleTimer(_ interval: TimeInterval, _ fire: @escaping () -> Void) -> () -> Void {
+        let timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in fire() }
+        // Nothing here is urgent; let the system batch wakeups.
+        timer.tolerance = interval / 3
+        return { timer.invalidate() }
+    }
+
     private func update() {
-        guard let git, !running, !paths.isEmpty else { return }
+        guard let git, !paths.isEmpty else { return }
+        guard !running else { rerun = true; return }
         running = true
         let paths = self.paths
-        queue.async {
+        workQueue.async {
             var results: [String: GitStatus] = [:]
             for path in paths {
-                results[path] = Self.status(git: git, path: path)
+                results[path] = self.runner(git, path)
             }
-            DispatchQueue.main.async {
+            self.mainQueue.async {
                 self.running = false
                 // Paths dropped meanwhile stay dropped.
                 let current = results.filter { self.paths.contains($0.key) }
                 if current != self.statuses { self.statuses = current }
+                // The paths changed, or polling resumed, during the run.
+                if self.rerun {
+                    self.rerun = false
+                    if !self.isPaused { self.update() }
+                }
             }
         }
     }
 
-    private static func status(git: String, path: String) -> GitStatus? {
+    static func status(git: String, path: String) -> GitStatus? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: git)
         // --no-optional-locks: don't take index.lock behind the user's back.
