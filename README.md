@@ -30,7 +30,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 ## Requirements
 
 - An Apple silicon Mac with macOS 14 or later.
-- [tmux](https://github.com/tmux/tmux) 3.2 or later. 3.6 or later is recommended, and dmucode is developed with 3.8.
+- [tmux](https://github.com/tmux/tmux) 3.2 or later. 3.6 or later is recommended, and dmucode is developed with 3.8. dmucode looks for `tmux` (and `git`, for the tabs' git status) in `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` (MacPorts), the Nix profiles (`~/.nix-profile/bin`, `/etc/profiles/per-user/$USER/bin`, `/run/current-system/sw/bin`, `/nix/var/nix/profiles/default/bin`) and `/usr/bin`, then in the `PATH` it was started with. If it finds no tmux there, it asks your login shell (`$SHELL -l -c 'command -v tmux'`). Set `DMUCODE_TMUX` to use another one.
 - To build from source: Xcode 16 or later (Swift 6), and [Zig](https://ziglang.org) **0.16.x** for libghostty. Ghostty needs this exact minor version, so Homebrew's current `zig` won't do; install `zig@0.16`.
 
 ## Installation
@@ -230,7 +230,7 @@ Claude Code then sends its message (OSC 9) and a bell. By default (`auto`) it se
 | Variable | Effect |
 |---|---|
 | `DMUCODE_TMUX_SOCKET=name` | Use a separate tmux server (`tmux -L name`), e.g. to try things without touching your sessions. |
-| `DMUCODE_TMUX=/path/to/tmux` | Use this tmux instead of looking in `/opt/homebrew/bin`, `/usr/local/bin` and `/usr/bin`. |
+| `DMUCODE_TMUX=/path/to/tmux` | Use this tmux instead of searching for one (see [Requirements](#requirements)). |
 | `DMUCODE_RESURRECT_DIR=dir` | Look for the tmux-resurrect save here (for tests). |
 | `DMUCODE_DEBUG_DIR=dir` | Enable the debug hook (see [Development](#development)). |
 
@@ -243,7 +243,7 @@ Claude Code then sends its message (OSC 9) and a bell. By default (`auto`) it se
   ```
 
   Use `/usr/bin/log` in zsh, where `log` is a builtin. Use `stream --level debug` instead of `show --last 1h` to watch every tmux notification live.
-- **"tmux not found".** Apps started from Finder don't get your shell's `PATH`. Install tmux with Homebrew or set `DMUCODE_TMUX`.
+- **"tmux not found".** Apps started from Finder don't get your shell's `PATH`, so dmucode searches the locations listed under [Requirements](#requirements) and then asks your login shell. If tmux lives somewhere else, or your login shell can't find it, set `DMUCODE_TMUX`.
 - **No attention marker from Claude Code.** Set `allow-passthrough on` in tmux and `preferredNotifChannel` as above.
 - **Sessions aren't restored after a reboot.**
   - Check that both plugins are installed and that `~/.local/share/tmux/resurrect/last` exists.

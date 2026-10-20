@@ -84,12 +84,31 @@ public struct Tmux {
     /// `-L` socket name from DMUCODE_TMUX_SOCKET; nil means the default server.
     public let socketName: String?
 
-    public static func resolve() -> Tmux? {
-        let env = ProcessInfo.processInfo.environment
-        let candidates = [env["DMUCODE_TMUX"], "/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"]
-        guard let executable = candidates.compactMap({ $0 }).first(where: {
-            FileManager.default.isExecutableFile(atPath: $0)
-        }) else { return nil }
+    /// Looks for tmux in DMUCODE_TMUX, then the usual install locations (see
+    /// `ExecutableLookup`). Fast; see `resolveViaLoginShell` for the fallback.
+    public static func resolve(
+        lookup: ExecutableLookup = ExecutableLookup(),
+        environment env: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Tmux? {
+        lookup.find("tmux", override: env["DMUCODE_TMUX"]).map { make(executable: $0, environment: env) }
+    }
+
+    /// For when `resolve` finds nothing: asks the user's login shell where
+    /// tmux is (its profile may put it on PATH somewhere unusual). Runs off
+    /// the main thread, with a short timeout; `completion` runs on the main
+    /// thread with nil if the shell doesn't know either.
+    public static func resolveViaLoginShell(
+        lookup: ExecutableLookup = ExecutableLookup(),
+        environment env: [String: String] = ProcessInfo.processInfo.environment,
+        completion: @escaping @Sendable (Tmux?) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let tmux = lookup.findViaLoginShell("tmux").map { make(executable: $0, environment: env) }
+            DispatchQueue.main.async { completion(tmux) }
+        }
+    }
+
+    private static func make(executable: String, environment env: [String: String]) -> Tmux {
         let socket = env["DMUCODE_TMUX_SOCKET"].flatMap { $0.isEmpty ? nil : $0 }
         return Tmux(executable: executable, socketName: socket)
     }
@@ -307,10 +326,11 @@ public struct Tmux {
 
     /// The environment for tmux processes started by the app. A tmux server
     /// started from here inherits it, so give it a usable PATH even when the
-    /// app was launched from Finder.
+    /// app was launched from Finder: the directory tmux was found in, so the
+    /// server finds the same tools, and the other usual install locations.
     var environment: [String: String] {
         var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
+        env["PATH"] = ExecutableLookup(environment: env).path(including: executable, current: env["PATH"])
         // tmux configs often set default-terminal to xterm-ghostty, which
         // panes can only resolve if the server knows where its terminfo is.
         if env["TERMINFO"] == nil, let terminfo = Bundle.main.resourceURL?.appendingPathComponent("terminfo").path,

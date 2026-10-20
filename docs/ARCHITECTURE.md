@@ -23,6 +23,7 @@ The package has two targets. `dmucodeCore` (library) holds everything that doesn
 | [MainWindowController.swift](../Sources/dmucode/MainWindowController.swift) | The window: sidebar, tab bar, terminals, palette, theme and fullscreen handling. Also `TerminalContainerController`, which holds one terminal per opened session. |
 | [SessionStore.swift](../Sources/dmucodeCore/SessionStore.swift) | The sidebar's model: sessions, selection, attention markers, recent sessions, the sidebar layout. Owns the control-mode client and falls back to polling. |
 | [TmuxControlClient.swift](../Sources/dmucodeCore/TmuxControlClient.swift) | The control-mode client: process, heartbeat, logging, and `ControlModeParser` for the protocol. |
+| [ExecutableLookup.swift](../Sources/dmucodeCore/ExecutableLookup.swift) | Finding `tmux` and `git` by absolute path. |
 | [Tmux.swift](../Sources/dmucodeCore/Tmux.swift) | The tmux CLI wrapper, the list formats and their parsers; `TmuxSession`, `TmuxWindow`, `TmuxPane`. |
 | [SidebarView.swift](../Sources/dmucode/SidebarView.swift), [SidebarLayout.swift](../Sources/dmucodeCore/SidebarLayout.swift) | The sidebar, and its order and groups kept by session name. |
 | [TabBarView.swift](../Sources/dmucode/TabBarView.swift), [GitStatus.swift](../Sources/dmucodeCore/GitStatus.swift) | The tabs and their git status. |
@@ -51,7 +52,21 @@ dmucode keeps one control client and listens for `%sessions-changed`, `%session-
 - **Switching sessions inside tmux:** `%client-session-changed` includes the client's tty. If it is the tty of one of dmucode's terminals (`ghostty_surface_tty_name`), that terminal moves to the new session and the sidebar follows (`prefix s`, `switch-client`).
 - **Paths, git status and alert flags:** a `cd` sends no notification, so the client subscribes to a format (`refresh-client -B`) that contains every window's `pane_current_path` and alert flags across all sessions. tmux checks subscriptions about once a second and sends `%subscription-changed` when the value changes.
   - The selected session's directories get `git --no-optional-locks status --porcelain=v2 --branch` as soon as they change, then every 3 seconds, since editing files sends no event.
+  - **Pausing:** the 3-second timer runs only while someone can see the result. `GitStatusStore.setActive(_:)` stops it, and the window controller calls it with `false` when the app resigns active, the window is minimized, or the window is fully occluded (`NSWindow.occlusionState`), and with `true` when all of those clear. Resuming runs an update at once and restarts the timer. Directories that change while paused still get one update, so a session switched from elsewhere shows its status, but no timer starts. An update asked for while one is running (resume, new directories) runs again when it finishes.
+  - The timer, the runner and the queues are injected, so the tests drive ticks and activation without waiting or running git.
 - **Side effects:** the control client is an attached client as far as tmux is concerned. `tmux ls` shows one session as attached, and `client-attached` hooks run for it. The sidebar's attached count ignores control clients.
+
+## Finding executables
+
+Apps started from Finder don't inherit the shell's `PATH`, so `ExecutableLookup` searches by absolute path, the same way for tmux and git. The order, first executable wins:
+
+1. `DMUCODE_TMUX` (tmux only; skipped if it isn't executable).
+2. `/opt/homebrew/bin`, `/usr/local/bin` (Homebrew), `/opt/local/bin` (MacPorts).
+3. Nix: `~/.nix-profile/bin`, `/etc/profiles/per-user/$USER/bin`, `/run/current-system/sw/bin`, `/nix/var/nix/profiles/default/bin`.
+4. `/usr/bin`, then the absolute directories of the process's own `PATH` (set when started from a terminal).
+5. For tmux, if nothing was found: the login shell, `$SHELL -l -c 'command -v tmux'` (the user's shell from the password database if `SHELL` is unset). It runs off the main thread with a 3-second timeout (the shell is terminated after that), ignores banners by taking the last output line that is an absolute executable path, and ignores aliases and functions. The shell is not interactive, so only the profile files (`.zprofile`, `config.fish`, `.bash_profile`) apply, not `.zshrc`.
+
+The directory tmux was found in goes first in the `PATH` of every tmux process the app starts (`Tmux.environment`), followed by the other known locations and the inherited `PATH`, so a tmux server started by dmucode finds the same tools. The filesystem check is injected, so the tests use a fake filesystem.
 
 ## Tabs
 
@@ -138,6 +153,7 @@ A marker has two sources.
 - **Unit tests** (`swift test`, Swift Testing) import `dmucodeCore` with `@testable import`, so they run on a fresh clone without building GhosttyKit. They cover:
   - `ControlModeParser`, the list and `git status` parsers, and the pane title filters
   - `FuzzyMatch` and `SidebarLayout`
+  - `ExecutableLookup` (on a fake filesystem, plus throwaway shell scripts for the login-shell fallback) and the pausing of `GitStatusStore` (with a fake timer and runner)
 - **UI behavior** is checked with a test instance against its own tmux server (`DMUCODE_TMUX_SOCKET`), driven through the debug hook (`DMUCODE_DEBUG_DIR`). The hook's `state` command dumps:
   - the sidebar rows
   - the palette

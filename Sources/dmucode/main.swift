@@ -11,10 +11,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
 
-        guard let tmux = Tmux.resolve() else {
-            fail("tmux not found", "Install tmux (e.g. brew install tmux) or set DMUCODE_TMUX to its path.")
-            return
+        if let tmux = Tmux.resolve() {
+            launch(tmux)
+        } else {
+            // Not in the usual places: ask the login shell, off the main thread.
+            Tmux.resolveViaLoginShell { [weak self] tmux in
+                if let tmux {
+                    self?.launch(tmux)
+                } else {
+                    self?.fail("tmux not found", """
+                        Looked in the Homebrew, MacPorts and Nix locations and in your login shell's PATH. \
+                        Install tmux (e.g. brew install tmux), or set DMUCODE_TMUX to its path.
+                        """)
+                }
+            }
         }
+    }
+
+    private func launch(_ tmux: Tmux) {
         guard GhosttyRuntime.shared.start() else {
             fail("libghostty failed to start", "See Console.app for details.")
             return
