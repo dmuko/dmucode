@@ -24,6 +24,22 @@ open build/dmucode.app
 
 Ghostty on submoduulina hakemistossa `vendor/ghostty`, lukittuna commitiin `431126c` (2026-10-18), jolla prototyyppi on testattu. `ghostty.h` on Ghosttyn sisäinen API ja voi muuttua milloin tahansa. Kun päivität Ghosttyn, aja `build-ghosttykit.sh` uudelleen ja testaa.
 
+## Julkaisu
+
+Suoraan jaettava versio (App Storen ulkopuolella) allekirjoitetaan Developer ID:llä ja notarisoidaan:
+
+```bash
+# kerran: notarisoinnin tunnukset avainnippuun (app-specific password, appleid.apple.com)
+xcrun notarytool store-credentials dmucode --apple-id <apple id> --team-id XSZ93868FT
+./scripts/release.sh            # tuottaa build/release/dmucode-<versio>.dmg
+```
+
+- **Mitä skripti tekee:** rakentaa sovelluksen (`build-app.sh`) ja allekirjoittaa sen Developer ID Application -sertifikaatilla, hardened runtimella, aikaleimalla ja entitlementeillä ([dmucode.entitlements](Resources/dmucode.entitlements)). Sitten se notarisoi sovelluksen ja kiinnittää lipun (staple), tekee DMG:n (sovellus ja linkki Applications-kansioon), allekirjoittaa ja notarisoi sen, ja tarkistaa lopuksi molemmat `spctl`:llä.
+- **Entitlementit ja käyttötarkoitustekstit:** samat kuin Ghosttyn omassa sovelluksessa. Terminaalissa ajetut ohjelmat (kamera, mikrofoni, AppleScript…) pyytävät oikeuksia dmucoden nimissä, ja hardened runtime estää ne ilman entitlementtejä.
+- **Versio:** `CFBundleShortVersionString` ja `CFBundleVersion` tiedostossa [Info.plist](Resources/Info.plist) nostetaan ennen julkaisua.
+- **Arkkitehtuuri:** julkaisu on vain Apple Siliconille (GhosttyKit on käännetty arm64:lle).
+- **Käyttäjä tarvitsee tmuxin itse** (`brew install tmux`).
+
 ## Käyttö
 
 | | |

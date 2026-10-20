@@ -7,13 +7,13 @@
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>dev.dmucode.app</string>
+	<string>io.github.dmuko.dmucode</string>
 	<key>CFBundleName</key>
 	<string>dmucode</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1</string>
+	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
@@ -22,5 +22,36 @@
 	<true/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>Includes Ghostty (libghostty), © Mitchell Hashimoto, Ghostty contributors. MIT License.</string>
+	<!-- Programs running in the terminal ask for these in dmucode's name
+	     (as in Ghostty's own app); the hardened runtime needs the
+	     matching entitlements in Resources/dmucode.entitlements. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>A program running within dmucode would like to use AppleScript.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>A program running within dmucode would like to access your system's audio.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>A program running within dmucode would like to use Bluetooth.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>A program running within dmucode would like to access your Calendar.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A program running within dmucode would like to use the camera.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>A program running within dmucode would like to access your Contacts.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>A program running within dmucode would like to access the local network.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>A program running within dmucode would like to access your location information.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>A program running within dmucode would like to use your microphone.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>A program running within dmucode would like to access motion data.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>A program running within dmucode would like to access your Photo Library.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>A program running within dmucode would like to access your reminders.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>A program running within dmucode would like to use speech recognition.</string>
 </dict>
 </plist>
