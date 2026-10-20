@@ -9,6 +9,8 @@ public enum Log {
     public static let control = Logger(subsystem: subsystem, category: "control")
     /// libghostty and its configuration.
     public static let ghostty = Logger(subsystem: subsystem, category: "ghostty")
+    /// dmucode's own config file.
+    public static let config = Logger(subsystem: subsystem, category: "config")
     /// The debug hook (DMUCODE_DEBUG_DIR).
     public static let debug = Logger(subsystem: subsystem, category: "debug")
 }

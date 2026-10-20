@@ -19,7 +19,8 @@ The package has two targets. `dmucodeCore` (library) holds everything that doesn
 
 | File | Role |
 |---|---|
-| [main.swift](../Sources/dmucode/main.swift) | App delegate, menus, startup. |
+| [main.swift](../Sources/dmucode/main.swift) | App delegate, startup, loading dmucode's config. |
+| [AppMenu.swift](../Sources/dmucode/AppMenu.swift), [AppConfig.swift](../Sources/dmucodeCore/AppConfig.swift) | The main menu, and the config file whose `keybind`s set its shortcuts. |
 | [MainWindowController.swift](../Sources/dmucode/MainWindowController.swift) | The window: sidebar, tab bar, terminals, palette, theme and fullscreen handling. Also `TerminalContainerController`, which holds one terminal per opened session. |
 | [SessionStore.swift](../Sources/dmucodeCore/SessionStore.swift) | The sidebar's model: sessions, selection, attention markers, recent sessions, the sidebar layout. Owns the control-mode client and falls back to polling. |
 | [TmuxBackend.swift](../Sources/dmucodeCore/TmuxBackend.swift) | The protocols `SessionStore` is written against (see [Testing](#testing)), and the production scheduler. |
@@ -35,7 +36,7 @@ The package has two targets. `dmucodeCore` (library) holds everything that doesn
 | [TerminalView.swift](../Sources/dmucode/TerminalView.swift) | One libghostty surface in an `NSView`: keyboard through `interpretKeyEvents` (so dead keys and input methods work), mouse, scrolling, size. |
 | [GhosttyInput.swift](../Sources/dmucode/GhosttyInput.swift) | Key translation, adapted from Ghostty's macOS app (MIT). |
 | [GhosttyRuntime.swift](../Sources/dmucode/GhosttyRuntime.swift) | The process-wide `ghostty_app_t`: config loading and reloading, the theme, clipboard and libghostty's action callbacks. |
-| [ConfigWatcher.swift](../Sources/dmucode/ConfigWatcher.swift) | FSEvents on the Ghostty config directories. |
+| [ConfigWatcher.swift](../Sources/dmucode/ConfigWatcher.swift) | FSEvents on the Ghostty and dmucode config directories. |
 | [DebugHooks.swift](../Sources/dmucode/DebugHooks.swift) | The test harness enabled by `DMUCODE_DEBUG_DIR`. |
 
 ## The control-mode connection
@@ -118,6 +119,15 @@ A marker has two sources.
 - **Format version:** the JSON is `{"version": 2, "entries": [...], "lastSeen": {"<name>": <seconds since 2001-01-01>}}`. Version 1 was unversioned (only `entries`) and is read as is. Data with a newer `version` than the build knows isn't read: the sidebar starts from defaults in memory and `SessionStore` doesn't save the layout that run, so a newer dmucode's layout isn't overwritten after a downgrade. Unreadable data is replaced.
 - **Pruning:** each successful session listing stamps the names in it in `lastSeen` (renewed only when an hour old, to avoid rewriting the defaults on every event), then `pruned(now:present:)` forgets the names not seen for 30 days. Names in the listing are never pruned. A pruned name leaves its group, and a group that loses all its sessions goes too; groups that were empty stay. Names without a stamp (version 1 data) are stamped on the first listing, so nothing is pruned right after the upgrade. A name that comes back is added as new, at the end.
 
+## dmucode's configuration
+
+`AppConfig` (dmucodeCore) parses `~/.config/dmucode/config` in Ghostty's `key = value` syntax; `$XDG_CONFIG_HOME` and `DMUCODE_CONFIG` are honored like Ghostty's and tmux's own overrides. A line that fails is reported as "line N: …" and skipped, and the rest applies, as libghostty does with the Ghostty config. A missing file is the defaults.
+
+- **Keybinds:** `KeyTrigger` is modifiers plus a character or a `NamedKey`; `KeybindAction` is the menu action, with `goto_session:N` and `goto_tab:N` carrying their position. `KeybindAction.defaults` holds the shortcuts without a config, and `AppConfig.keybindings` applies the `keybind` lines to them in order: a trigger bound to an action is taken from the action that had it, and `unbind` frees it. Each action has at most one shortcut, because it is a menu item's key equivalent.
+- **The menu:** `AppMenu` builds the main menu once, keeping each item by its action, and `apply` sets the key equivalents and modifier masks; a reload never rebuilds the menu. Named keys become AppKit's function-key characters (`NSUpArrowFunctionKey`…).
+- **Reloading:** the app delegate loads the config at launch, on Reload Config (⇧⌘,, which reloads the Ghostty config too) and when `ConfigWatcher` sees `config` saved in the directory. The watcher is created once the directory exists, so a config directory created while the app runs is picked up after a manual reload. Errors go to the `config` log category and to the same sheet as Ghostty's config errors, kept apart per source so a fix to one doesn't hide the other's.
+- **Control shortcuts:** `TerminalView.performKeyEquivalent` keeps control combinations for the terminal, so a `ctrl+…` keybind is offered to the main menu first and goes to the terminal only if no item claims it.
+
 ## Ghostty configuration
 
 - **Loading:** `GhosttyRuntime` loads the default config files at launch.
@@ -191,6 +201,7 @@ The package uses Swift 6 tooling in language mode 5, with complete concurrency c
   - `FuzzyMatch` and `SidebarLayout`
   - `SessionStore`: selection and the remembered session, the restore placeholder, alerts, the error sources, the switch between polling and control mode, and starting a session template
   - `Sesh`'s list parser and error messages, `Tmux.socketPath`, and the environment sesh runs in
+  - `AppConfig`: the parser and its errors, trigger spellings, action names, and how `keybind` lines resolve against the defaults
 - **A fake tmux for `SessionStore`:** the store depends on protocols, not on `Process`. `TmuxBackend` is the tmux CLI (the real `Tmux` conforms), `TmuxControlConnection` is the control-mode client (`TmuxControlClient`), and `StoreScheduler` is where its work runs and when (queues, delays and the polling timer). The public `TmuxCommands` is the part of `TmuxBackend` that the app's `SessionStore.perform` closures get. The app creates the store with `SessionStore(tmux:)`, which wires in the real ones; tests use the internal initializer with `FakeTmux`, `FakeControl`, `FakeTemplates` (for `SessionTemplates`) and a `ManualScheduler` (in `Tests/dmucodeTests/SessionStoreFakes.swift`) that runs background work at once and moves time only when the test says so, so nothing waits. Each test gets its own `UserDefaults` suite, which is removed afterwards.
   - `ExecutableLookup` (on a fake filesystem, plus throwaway shell scripts for the login-shell fallback) and the pausing of `GitStatusStore` (with a fake timer and runner)
 - **UI behavior** is checked with a test instance against its own tmux server (`DMUCODE_TMUX_SOCKET`), driven through the debug hook (`DMUCODE_DEBUG_DIR`). The hook's `state` command dumps:

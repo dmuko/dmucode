@@ -1,15 +1,17 @@
 import CoreServices
 import Foundation
 
-/// Calls back on the main thread when a Ghostty config file is saved, so
-/// changes apply without the reload shortcut. FSEvents on the config
-/// directories also sees editors that save by writing a new file and
-/// renaming it over the old one. Reacts to `config`, `config.ghostty` and
+/// Calls back on the main thread when a config file is saved, so changes
+/// apply without the reload shortcut. FSEvents on the config directories
+/// also sees editors that save by writing a new file and renaming it over
+/// the old one. For Ghostty it reacts to `config`, `config.ghostty` and
 /// files under `themes/`; files included with `config-file` from elsewhere
-/// aren't watched.
+/// aren't watched. For dmucode's own config, to `config`.
 final class ConfigWatcher {
     private var stream: FSEventStreamRef?
     private let directories: [String]
+    private let files: [String]
+    private let subdirectories: [String]
     private let onChange: () -> Void
 
     /// Where libghostty looks for `config` and `config.ghostty`:
@@ -21,8 +23,10 @@ final class ConfigWatcher {
         return [(xdg ?? home + "/.config") + "/ghostty", home + "/Library/Application Support/com.mitchellh.ghostty"]
     }
 
-    /// Nil if none of the directories exists.
-    init?(directories: [String], onChange: @escaping () -> Void) {
+    /// Nil if none of the directories exists. Reacts to the named `files`
+    /// in them and to anything under the `subdirectories`.
+    init?(directories: [String], files: [String] = ["config", "config.ghostty"], subdirectories: [String] = ["themes"],
+          onChange: @escaping () -> Void) {
         // FSEvents reports canonical paths (/private/tmp, not /tmp).
         let existing = directories.compactMap { path -> String? in
             guard let resolved = realpath(path, nil) else { return nil }
@@ -31,6 +35,8 @@ final class ConfigWatcher {
         }
         guard !existing.isEmpty else { return nil }
         self.directories = existing
+        self.files = files
+        self.subdirectories = subdirectories
         self.onChange = onChange
 
         var context = FSEventStreamContext(
@@ -63,8 +69,8 @@ final class ConfigWatcher {
         let relevant = paths.contains { path in
             directories.contains { directory in
                 guard path.hasPrefix(directory + "/") else { return false }
-                let file = path.dropFirst(directory.count + 1)
-                return file == "config" || file == "config.ghostty" || file.hasPrefix("themes/")
+                let file = String(path.dropFirst(directory.count + 1))
+                return files.contains(file) || subdirectories.contains { file.hasPrefix($0 + "/") }
             }
         }
         if relevant { onChange() }

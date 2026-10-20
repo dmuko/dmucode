@@ -22,7 +22,7 @@ import IOSurface
 ///   cmdbar LINE     run tmux command LINE in the palette (state shows the result)
 ///   palette TEXT    type TEXT into the palette and press Return
 ///   new NAME        create a session (as the New Session button does)
-///   state NAME      write the sidebar state (live, selection, sessions) to NAME.txt
+///   state NAME      write the sidebar state (live, selection, sessions, keybinds) to NAME.txt
 ///   pixels NAME     write raw RGBA samples of the visible terminal's IOSurface to NAME.txt
 enum DebugHooks {
     private static var timer: Timer?
@@ -63,6 +63,9 @@ enum DebugHooks {
             if let controller = window.windowController as? MainWindowController {
                 lines.append(controller.paletteState)
                 lines.append(controller.themeState)
+            }
+            if let delegate = NSApp.delegate as? AppDelegate {
+                lines.append("keybinds=" + delegate.menuDebugState)
             }
             lines.append("firstResponder=\(window.firstResponder.map { String(describing: type(of: $0)) } ?? "-")")
             if let editor = window.firstResponder as? NSTextView {
