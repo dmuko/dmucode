@@ -60,7 +60,7 @@ struct TmuxParseTests {
     @Test func panes() {
         let panes = Tmux.parsePanes([
             "$0\t@1\t%5\t10\tclaude\t/Users/me/code\t✳ Fix the login bug",
-            "$0\t@1\t%6\t01\tfish\t/Users/me\tTeemus-MacBook-Air.local",
+            "$0\t@1\t%6\t01\tfish\t/Users/me\texample-mac.local",
             "$1\t@2\t%7\t10\tnvim\t/tmp\ttitle\twith\ttabs",
             "bad line",
             "$1\t@2\t%8\t1\tsh\t/\tshort flags",
@@ -69,7 +69,7 @@ struct TmuxParseTests {
             TmuxPane(id: "%5", sessionID: "$0", windowID: "@1", isActive: true, command: "claude",
                      path: "/Users/me/code", title: "✳ Fix the login bug", hasDefaultTitle: false),
             TmuxPane(id: "%6", sessionID: "$0", windowID: "@1", isActive: false, command: "fish",
-                     path: "/Users/me", title: "Teemus-MacBook-Air.local", hasDefaultTitle: true),
+                     path: "/Users/me", title: "example-mac.local", hasDefaultTitle: true),
             TmuxPane(id: "%7", sessionID: "$1", windowID: "@2", isActive: true, command: "nvim",
                      path: "/tmp", title: "title\twith\ttabs", hasDefaultTitle: false),
         ])
@@ -84,7 +84,7 @@ struct TmuxParseTests {
         #expect(pane(title: "✳ Fix the login bug", command: "claude").meaningfulTitle == "✳ Fix the login bug")
         #expect(pane(title: "nvim -c ':Neotree' ~/.config", command: "nvim").meaningfulTitle != nil)
         // The host name (tmux's default), a directory, the program itself, nothing.
-        #expect(pane(title: "Teemus-MacBook-Air.local", defaultTitle: true).meaningfulTitle == nil)
+        #expect(pane(title: "example-mac.local", defaultTitle: true).meaningfulTitle == nil)
         #expect(pane(title: "~/C/C/dmucode").meaningfulTitle == nil)
         #expect(pane(title: "/var/log").meaningfulTitle == nil)
         #expect(pane(title: "htop", command: "htop").meaningfulTitle == nil)

@@ -32,7 +32,16 @@ final class SessionStore: ObservableObject {
     /// The sidebar's order and groups; `sessions` follows it.
     @Published private(set) var layout = SidebarLayout()
     var sidebarRows: [SidebarLayout.Row] { layout.rows(for: sessions) }
-    @Published private(set) var errorMessage: String?
+    /// The error shown under the sidebar. Kept apart by source, so a
+    /// successful refresh doesn't wipe a command's error a moment later.
+    var errorMessage: String? { commandError ?? connectionError ?? listError }
+    /// A tmux command failed (e.g. renaming to a taken name). Stays until
+    /// the next command succeeds or the user dismisses it.
+    @Published private(set) var commandError: String?
+    /// The control-mode client couldn't start. Stays until it connects.
+    @Published private(set) var connectionError: String?
+    /// Listing the sessions failed. Cleared by the next successful listing.
+    @Published private(set) var listError: String?
     /// True while updates arrive as control-mode events, false while polling.
     @Published private(set) var isLive = false
     /// True while tmux-continuum restores sessions after we started the server.
@@ -163,10 +172,14 @@ final class SessionStore: ObservableObject {
             let error: Error?
             do { try work(tmux); error = nil } catch let e { error = e }
             DispatchQueue.main.async {
-                if let error { self.errorMessage = "\(error)" }
+                self.commandError = error.map { "\($0)" }
                 self.refresh(then: completion)
             }
         }
+    }
+
+    func dismissCommandError() {
+        commandError = nil
     }
 
     // MARK: Attention
@@ -301,7 +314,7 @@ final class SessionStore: ObservableObject {
             client = try TmuxControlClient(tmux: tmux, sessionID: first.id)
         } catch {
             TmuxControlClient.log.error("tmux -C failed to start: \(String(describing: error), privacy: .public)")
-            errorMessage = "tmux control mode: \(error)"
+            connectionError = "tmux control mode: \(error)"
             return
         }
         client.onNotification = { [weak self] name, args in
@@ -315,6 +328,7 @@ final class SessionStore: ObservableObject {
             self.refresh()
         }
         control = client
+        connectionError = nil
         isLive = true
         stopPolling()
         // Pick up anything that changed between the CLI query and attaching.
@@ -371,7 +385,7 @@ final class SessionStore: ObservableObject {
     private func apply(_ result: Result<[TmuxSession], Error>) {
         switch result {
         case .success(var sessions):
-            errorMessage = nil
+            listError = nil
             if let placeholder = restorePlaceholderID {
                 if sessions.contains(where: { $0.id == placeholder }) {
                     sessions.removeAll { $0.id == placeholder }
@@ -389,7 +403,7 @@ final class SessionStore: ObservableObject {
             recentIDs.removeAll { !ids.contains($0) }
             fixSelection()
         case .failure(let error):
-            errorMessage = "\(error)"
+            listError = "\(error)"
         }
     }
 

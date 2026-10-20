@@ -58,7 +58,7 @@ enum DebugHooks {
                 store.selectedID = store.sessions[n - 1].id
             }
         case "state":
-            var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque) restoring=\(store.isRestoring)"]
+            var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque) restoring=\(store.isRestoring) error=\(store.errorMessage ?? "-")"]
             if let controller = window.windowController as? MainWindowController {
                 lines.append(controller.paletteState)
                 lines.append(controller.themeState)

@@ -29,7 +29,6 @@ Each session the user opens gets a libghostty terminal surface that runs `tmux a
 | [GhosttyInput.swift](../Sources/dmucode/GhosttyInput.swift) | Key translation, adapted from Ghostty's macOS app (MIT). |
 | [GhosttyRuntime.swift](../Sources/dmucode/GhosttyRuntime.swift) | The process-wide `ghostty_app_t`: config loading and reloading, the theme, clipboard and libghostty's action callbacks. |
 | [ConfigWatcher.swift](../Sources/dmucode/ConfigWatcher.swift) | FSEvents on the Ghostty config directories. |
-| [DefaultsMigration.swift](../Sources/dmucode/DefaultsMigration.swift) | Copies settings from the old bundle id (`dev.dmucode.app`). |
 | [DebugHooks.swift](../Sources/dmucode/DebugHooks.swift) | The test harness enabled by `DMUCODE_DEBUG_DIR`. |
 
 ## The control-mode connection
@@ -120,7 +119,6 @@ A marker has two sources.
 - **Unit tests** (`swift test`, Swift Testing) cover:
   - `ControlModeParser`, the list and `git status` parsers, and the pane title filters
   - `FuzzyMatch` and `SidebarLayout`
-  - `DefaultsMigration`
 - **UI behavior** is checked with a test instance against its own tmux server (`DMUCODE_TMUX_SOCKET`), driven through the debug hook (`DMUCODE_DEBUG_DIR`). The hook's `state` command dumps:
   - the sidebar rows
   - the palette

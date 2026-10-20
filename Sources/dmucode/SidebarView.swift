@@ -60,6 +60,9 @@ struct SidebarView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                    .onTapGesture { store.dismissCommandError() }
+                    .help(store.commandError != nil ? "Click to dismiss" : "")
             }
 
             HStack {

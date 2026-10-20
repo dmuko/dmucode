@@ -8,8 +8,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Before anything reads the settings (the store, the window frame).
-        if let id = Bundle.main.bundleIdentifier { DefaultsMigration.run(into: id) }
         NSApp.mainMenu = makeMainMenu()
 
         guard let tmux = Tmux.resolve() else {
@@ -31,6 +29,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    // Opts in to secure coding for restorable state; macOS 14 warns otherwise.
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
     func applicationDidBecomeActive(_ notification: Notification) {
         GhosttyRuntime.shared.setFocus(true)
