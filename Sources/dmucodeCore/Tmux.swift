@@ -1,43 +1,43 @@
 import Foundation
 
-struct TmuxSession: Identifiable, Equatable {
+public struct TmuxSession: Identifiable, Equatable {
     /// tmux's session id, e.g. "$3". Stable across renames, unlike the name.
-    let id: String
-    let name: String
+    public let id: String
+    public let name: String
     /// In tmux's order (by window index).
-    var windows: [TmuxWindow]
-    let attachedClients: Int
+    public var windows: [TmuxWindow]
+    public let attachedClients: Int
 
-    var hasBell: Bool { windows.contains { $0.hasBell } }
-    var hasActivity: Bool { windows.contains { $0.hasActivity } }
+    public var hasBell: Bool { windows.contains { $0.hasBell } }
+    public var hasActivity: Bool { windows.contains { $0.hasActivity } }
 }
 
 /// A tmux window, shown as a tab above the terminal.
-struct TmuxWindow: Identifiable, Equatable {
+public struct TmuxWindow: Identifiable, Equatable {
     /// tmux's window id, e.g. "@7". A window linked into several sessions
     /// has the same id in each, so target it together with the session.
-    let id: String
-    let index: Int
-    let name: String
+    public let id: String
+    public let index: Int
+    public let name: String
     /// The session's current window.
-    var isActive: Bool
+    public var isActive: Bool
     /// The working directory of the window's active pane.
-    let path: String
+    public let path: String
     /// tmux's alert flags: a bell rang, or (with monitor-activity) there was
     /// output, since the window was last current. tmux doesn't set them for
     /// the current window of an attached session.
-    var hasBell = false
-    var hasActivity = false
+    public var hasBell = false
+    public var hasActivity = false
 }
 
 /// A pane, for the palette's search. Fetched when the palette opens.
-struct TmuxPane: Equatable {
+public struct TmuxPane: Equatable {
     /// tmux's pane id, e.g. "%5".
-    let id: String
-    let sessionID: String
-    let windowID: String
+    public let id: String
+    public let sessionID: String
+    public let windowID: String
     /// The active pane of its window.
-    let isActive: Bool
+    public let isActive: Bool
     let command: String
     let path: String
     /// Set by the program in the pane (OSC 2): Claude Code puts its topic
@@ -49,7 +49,7 @@ struct TmuxPane: Equatable {
     private static let shells: Set<String> = ["fish", "zsh", "bash", "sh", "dash", "tcsh", "nu"]
 
     /// The title when it says more than the host name or a directory.
-    var meaningfulTitle: String? {
+    public var meaningfulTitle: String? {
         let title = self.title.trimmingCharacters(in: .whitespaces)
         guard !title.isEmpty, !hasDefaultTitle, !title.hasPrefix("~"), !title.hasPrefix("/"),
               title != command else { return nil }
@@ -57,35 +57,58 @@ struct TmuxPane: Equatable {
     }
 
     /// The program, unless it is just the shell.
-    var meaningfulCommand: String? {
+    public var meaningfulCommand: String? {
         Self.shells.contains(command) || command.isEmpty ? nil : command
     }
 }
 
 /// A tmux command, offered as a completion in the command bar.
-struct TmuxCommand {
-    let name: String
-    let alias: String
-    let usage: String
+public struct TmuxCommand {
+    public let name: String
+    public let alias: String
+    public let usage: String
 }
 
-struct TmuxError: Error, CustomStringConvertible, Equatable {
-    let description: String
+public struct TmuxError: Error, CustomStringConvertible, Equatable {
+    public let description: String
+
+    public init(description: String) {
+        self.description = description
+    }
 }
 
 /// Thin wrapper over the tmux CLI. Calls block, so run them off the main thread.
-struct Tmux {
+public struct Tmux {
     /// Absolute path: apps started from Finder don't inherit the shell's PATH.
     let executable: String
     /// `-L` socket name from DMUCODE_TMUX_SOCKET; nil means the default server.
-    let socketName: String?
+    public let socketName: String?
 
-    static func resolve() -> Tmux? {
-        let env = ProcessInfo.processInfo.environment
-        let candidates = [env["DMUCODE_TMUX"], "/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"]
-        guard let executable = candidates.compactMap({ $0 }).first(where: {
-            FileManager.default.isExecutableFile(atPath: $0)
-        }) else { return nil }
+    /// Looks for tmux in DMUCODE_TMUX, then the usual install locations (see
+    /// `ExecutableLookup`). Fast; see `resolveViaLoginShell` for the fallback.
+    public static func resolve(
+        lookup: ExecutableLookup = ExecutableLookup(),
+        environment env: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Tmux? {
+        lookup.find("tmux", override: env["DMUCODE_TMUX"]).map { make(executable: $0, environment: env) }
+    }
+
+    /// For when `resolve` finds nothing: asks the user's login shell where
+    /// tmux is (its profile may put it on PATH somewhere unusual). Runs off
+    /// the main thread, with a short timeout; `completion` runs on the main
+    /// thread with nil if the shell doesn't know either.
+    public static func resolveViaLoginShell(
+        lookup: ExecutableLookup = ExecutableLookup(),
+        environment env: [String: String] = ProcessInfo.processInfo.environment,
+        completion: @escaping @Sendable (Tmux?) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let tmux = lookup.findViaLoginShell("tmux").map { make(executable: $0, environment: env) }
+            DispatchQueue.main.async { completion(tmux) }
+        }
+    }
+
+    private static func make(executable: String, environment env: [String: String]) -> Tmux {
         let socket = env["DMUCODE_TMUX_SOCKET"].flatMap { $0.isEmpty ? nil : $0 }
         return Tmux(executable: executable, socketName: socket)
     }
@@ -165,7 +188,7 @@ struct Tmux {
     }
 
     /// Creates a detached session and returns its id.
-    func newSession(name: String?, directory: String) throws -> String {
+    public func newSession(name: String?, directory: String) throws -> String {
         var args = ["new-session", "-d", "-P", "-F", "#{session_id}", "-c", directory]
         if let name, !name.isEmpty { args += ["-s", name] }
         let result = try run(args)
@@ -173,7 +196,7 @@ struct Tmux {
         return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func renameSession(id: String, to name: String) throws {
+    public func renameSession(id: String, to name: String) throws {
         let result = try run(["rename-session", "-t", id, name])
         guard result.status == 0 else { throw TmuxError(description: result.stderr) }
     }
@@ -209,7 +232,7 @@ struct Tmux {
         return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func killSession(id: String) throws {
+    public func killSession(id: String) throws {
         let result = try run(["kill-session", "-t", id])
         guard result.status == 0 else { throw TmuxError(description: result.stderr) }
     }
@@ -235,17 +258,17 @@ struct Tmux {
 
     /// Opens a new window after the session's last one, in the current
     /// window's directory, and makes it current.
-    func newWindow(sessionID: String) throws {
+    public func newWindow(sessionID: String) throws {
         let result = try run(["new-window", "-a", "-t", sessionID + ":{end}", "-c", "#{pane_current_path}"])
         guard result.status == 0 else { throw TmuxError(description: result.stderr) }
     }
 
-    func renameWindow(sessionID: String, windowID: String, to name: String) throws {
+    public func renameWindow(sessionID: String, windowID: String, to name: String) throws {
         let result = try run(["rename-window", "-t", sessionID + ":" + windowID, name])
         guard result.status == 0 else { throw TmuxError(description: result.stderr) }
     }
 
-    func killWindow(sessionID: String, windowID: String) throws {
+    public func killWindow(sessionID: String, windowID: String) throws {
         let result = try run(["kill-window", "-t", sessionID + ":" + windowID])
         guard result.status == 0 else { throw TmuxError(description: result.stderr) }
     }
@@ -291,7 +314,7 @@ struct Tmux {
     }
 
     /// The shell command a terminal surface runs to show a session.
-    func attachCommand(sessionID: String) -> String {
+    public func attachCommand(sessionID: String) -> String {
         ([executable] + globalArgs + ["attach-session", "-t", sessionID])
             .map(Self.shellQuote)
             .joined(separator: " ")
@@ -303,10 +326,11 @@ struct Tmux {
 
     /// The environment for tmux processes started by the app. A tmux server
     /// started from here inherits it, so give it a usable PATH even when the
-    /// app was launched from Finder.
+    /// app was launched from Finder: the directory tmux was found in, so the
+    /// server finds the same tools, and the other usual install locations.
     var environment: [String: String] {
         var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
+        env["PATH"] = ExecutableLookup(environment: env).path(including: executable, current: env["PATH"])
         // tmux configs often set default-terminal to xterm-ghostty, which
         // panes can only resolve if the server knows where its terminfo is.
         if env["TERMINFO"] == nil, let terminfo = Bundle.main.resourceURL?.appendingPathComponent("terminfo").path,

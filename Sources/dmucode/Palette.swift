@@ -1,3 +1,4 @@
+import dmucodeCore
 import SwiftUI
 
 /// The palette below the tab bar, one field for two jobs: finding a session

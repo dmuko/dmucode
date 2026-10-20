@@ -1,5 +1,5 @@
 import Testing
-@testable import dmucode
+@testable import dmucodeCore
 
 struct FuzzyMatchTests {
     private func score(_ query: String, _ candidate: String) -> Int? {

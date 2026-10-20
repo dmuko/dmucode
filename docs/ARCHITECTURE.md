@@ -13,17 +13,23 @@ Each session the user opens gets a libghostty terminal surface that runs `tmux a
 
 ## Source layout
 
+The package has two targets. `dmucodeCore` (library) holds everything that doesn't need libghostty: the tmux wrapper and parsers, the session store, the sidebar layout, fuzzy matching and the git status. It imports only Foundation, so it builds, and its tests run, without GhosttyKit. `dmucode` (executable) is the app: AppKit and SwiftUI views, libghostty and the debug hook. It imports `dmucodeCore`, whose API is `public` only where the app uses it.
+
+`Package.swift` leaves the app and the GhosttyKit binary target out while `vendor/ghostty/macos/GhosttyKit.xcframework` doesn't exist, because SwiftPM rejects a missing binary target even when nothing being built uses it.
+
 | File | Role |
 |---|---|
 | [main.swift](../Sources/dmucode/main.swift) | App delegate, menus, startup. |
 | [MainWindowController.swift](../Sources/dmucode/MainWindowController.swift) | The window: sidebar, tab bar, terminals, palette, theme and fullscreen handling. Also `TerminalContainerController`, which holds one terminal per opened session. |
-| [SessionStore.swift](../Sources/dmucode/SessionStore.swift) | The sidebar's model: sessions, selection, attention markers, recent sessions, the sidebar layout. Owns the control-mode client and falls back to polling. |
-| [TmuxControlClient.swift](../Sources/dmucode/TmuxControlClient.swift) | The control-mode client: process, heartbeat, logging, and `ControlModeParser` for the protocol. |
-| [Tmux.swift](../Sources/dmucode/Tmux.swift) | The tmux CLI wrapper, the list formats and their parsers; `TmuxSession`, `TmuxWindow`, `TmuxPane`. |
-| [SidebarView.swift](../Sources/dmucode/SidebarView.swift), [SidebarLayout.swift](../Sources/dmucode/SidebarLayout.swift) | The sidebar, and its order and groups kept by session name. |
-| [TabBarView.swift](../Sources/dmucode/TabBarView.swift), [GitStatus.swift](../Sources/dmucode/GitStatus.swift) | The tabs and their git status. |
+| [SessionStore.swift](../Sources/dmucodeCore/SessionStore.swift) | The sidebar's model: sessions, selection, attention markers, recent sessions, the sidebar layout. Owns the control-mode client and falls back to polling. |
+| [TmuxBackend.swift](../Sources/dmucodeCore/TmuxBackend.swift) | The protocols `SessionStore` is written against (see [Testing](#testing)), and the production scheduler. |
+| [TmuxControlClient.swift](../Sources/dmucodeCore/TmuxControlClient.swift) | The control-mode client: process, heartbeat, logging, and `ControlModeParser` for the protocol. Its write queue and reply matching are in `ControlCommandPipeline`. |
+| [ExecutableLookup.swift](../Sources/dmucodeCore/ExecutableLookup.swift) | Finding `tmux` and `git` by absolute path. |
+| [Tmux.swift](../Sources/dmucodeCore/Tmux.swift) | The tmux CLI wrapper, the list formats and their parsers; `TmuxSession`, `TmuxWindow`, `TmuxPane`. |
+| [SidebarView.swift](../Sources/dmucode/SidebarView.swift), [SidebarLayout.swift](../Sources/dmucodeCore/SidebarLayout.swift) | The sidebar, and its order and groups kept by session name. |
+| [TabBarView.swift](../Sources/dmucode/TabBarView.swift), [GitStatus.swift](../Sources/dmucodeCore/GitStatus.swift) | The tabs and their git status. |
 | [Palette.swift](../Sources/dmucode/Palette.swift) | The ⌘K palette: one field, two modes. |
-| [SessionSwitcher.swift](../Sources/dmucode/SessionSwitcher.swift), [FuzzyMatch.swift](../Sources/dmucode/FuzzyMatch.swift) | Session mode and its fuzzy matching. |
+| [SessionSwitcher.swift](../Sources/dmucode/SessionSwitcher.swift), [FuzzyMatch.swift](../Sources/dmucodeCore/FuzzyMatch.swift) | Session mode and its fuzzy matching. |
 | [CommandBar.swift](../Sources/dmucode/CommandBar.swift) | Command mode (tmux commands), and the palette's shared look. |
 | [TerminalView.swift](../Sources/dmucode/TerminalView.swift) | One libghostty surface in an `NSView`: keyboard through `interpretKeyEvents` (so dead keys and input methods work), mouse, scrolling, size. |
 | [GhosttyInput.swift](../Sources/dmucode/GhosttyInput.swift) | Key translation, adapted from Ghostty's macOS app (MIT). |
@@ -42,12 +48,27 @@ dmucode keeps one control client and listens for `%sessions-changed`, `%session-
   - Every 10 seconds, if no command is waiting for a reply, it sends a no-op (`display-message -p ok`).
   - If the oldest pending reply is more than 5 seconds late, the client is killed, and dmucode polls until it can reconnect. A stall is therefore noticed within 10–20 seconds.
   - The timing uses `SuspendingClock`, so time asleep doesn't count.
+  - Commands are written to the client's stdin on a dedicated serial queue (`ControlCommandPipeline`), never under the lock and never on the caller's thread, so a server that stops reading can't block the main thread or the heartbeat. A command counts as overdue from the moment it is queued, so a stuck write is detected like a missing reply; a failed write fails that command's callback and the ones queued after it.
   - The tmux client hands its stdin and stdout to the server, which reads and writes them directly. So a stall happens on the server side: stopping the client process (`kill -STOP`) doesn't stall the connection, stopping the server does.
 - **Logging:** connecting, exiting and stalls go to the unified log (subsystem `com.dmuko.dmucode`, category `control`). Notifications and sent commands are logged at debug level, which isn't persisted; watch them with `log stream --level debug`.
 - **Switching sessions inside tmux:** `%client-session-changed` includes the client's tty. If it is the tty of one of dmucode's terminals (`ghostty_surface_tty_name`), that terminal moves to the new session and the sidebar follows (`prefix s`, `switch-client`).
 - **Paths, git status and alert flags:** a `cd` sends no notification, so the client subscribes to a format (`refresh-client -B`) that contains every window's `pane_current_path` and alert flags across all sessions. tmux checks subscriptions about once a second and sends `%subscription-changed` when the value changes.
   - The selected session's directories get `git --no-optional-locks status --porcelain=v2 --branch` as soon as they change, then every 3 seconds, since editing files sends no event.
+  - **Pausing:** the 3-second timer runs only while someone can see the result. `GitStatusStore.setActive(_:)` stops it, and the window controller calls it with `false` when the app resigns active, the window is minimized, or the window is fully occluded (`NSWindow.occlusionState`), and with `true` when all of those clear. Resuming runs an update at once and restarts the timer. Directories that change while paused still get one update, so a session switched from elsewhere shows its status, but no timer starts. An update asked for while one is running (resume, new directories) runs again when it finishes.
+  - The timer, the runner and the queues are injected, so the tests drive ticks and activation without waiting or running git.
 - **Side effects:** the control client is an attached client as far as tmux is concerned. `tmux ls` shows one session as attached, and `client-attached` hooks run for it. The sidebar's attached count ignores control clients.
+
+## Finding executables
+
+Apps started from Finder don't inherit the shell's `PATH`, so `ExecutableLookup` searches by absolute path, the same way for tmux and git. The order, first executable wins:
+
+1. `DMUCODE_TMUX` (tmux only; skipped if it isn't executable).
+2. `/opt/homebrew/bin`, `/usr/local/bin` (Homebrew), `/opt/local/bin` (MacPorts).
+3. Nix: `~/.nix-profile/bin`, `/etc/profiles/per-user/$USER/bin`, `/run/current-system/sw/bin`, `/nix/var/nix/profiles/default/bin`.
+4. `/usr/bin`, then the absolute directories of the process's own `PATH` (set when started from a terminal).
+5. For tmux, if nothing was found: the login shell, `$SHELL -l -c 'command -v tmux'` (the user's shell from the password database if `SHELL` is unset). It runs off the main thread with a 3-second timeout (the shell is terminated after that), ignores banners by taking the last output line that is an absolute executable path, and ignores aliases and functions. The shell is not interactive, so only the profile files (`.zprofile`, `config.fish`, `.bash_profile`) apply, not `.zshrc`.
+
+The directory tmux was found in goes first in the `PATH` of every tmux process the app starts (`Tmux.environment`), followed by the other known locations and the inherited `PATH`, so a tmux server started by dmucode finds the same tools. The filesystem check is injected, so the tests use a fake filesystem.
 
 ## Tabs
 
@@ -90,6 +111,8 @@ A marker has two sources.
 - **Renames:** they are followed from `%session-renamed`. tmux reuses session ids after a server restart, so a changed name for an id isn't proof of a rename.
 - **Automatic groups:** `group/name` sessions are filed when a name is first seen and when a rename changes the prefix, matching existing groups regardless of case.
 - **Storage:** the layout is stored as JSON in the user defaults, per tmux socket (`sidebarLayout-<socket>`).
+- **Format version:** the JSON is `{"version": 2, "entries": [...], "lastSeen": {"<name>": <seconds since 2001-01-01>}}`. Version 1 was unversioned (only `entries`) and is read as is. Data with a newer `version` than the build knows isn't read: the sidebar starts from defaults in memory and `SessionStore` doesn't save the layout that run, so a newer dmucode's layout isn't overwritten after a downgrade. Unreadable data is replaced.
+- **Pruning:** each successful session listing stamps the names in it in `lastSeen` (renewed only when an hour old, to avoid rewriting the defaults on every event), then `pruned(now:present:)` forgets the names not seen for 30 days. Names in the listing are never pruned. A pruned name leaves its group, and a group that loses all its sessions goes too; groups that were empty stay. Names without a stamp (version 1 data) are stamped on the first listing, so nothing is pruned right after the upgrade. A name that comes back is added as new, at the end.
 
 ## Ghostty configuration
 
@@ -112,13 +135,59 @@ A marker has two sources.
 
 - **Exited clients:** libghostty forces `wait-after-command` on for surfaces given a command. When the tmux client exits (detach, session killed), dmucode closes the view on `SHOW_CHILD_EXITED`; otherwise a "Press any key" screen would stay.
 - **Terminfo:** if the tmux config sets `default-terminal xterm-ghostty` and dmucode starts the server, the server gets a `TERMINFO` pointing to the app bundle's terminfo directory.
-- **Pinned version:** Ghostty is a submodule in `vendor/ghostty`, pinned to a commit the app is tested with. `ghostty.h` is internal and may change at any time; after moving the submodule, run `build-ghosttykit.sh` again and test.
+- **Pinned version:** Ghostty is a submodule in `vendor/ghostty`, pinned to a commit the app is tested with. See [The Ghostty pin](#the-ghostty-pin).
+
+## The Ghostty pin
+
+- **What:** `vendor/ghostty` is a shallow submodule pinned to `431126c` ("Update VOUCHED list", 2026-10-18), a commit on Ghostty's `main` branch. It is not a release tag.
+- **Why not a release tag:** checked on 2026-10-20 against the latest tag, `v1.3.1` (2026-03-13). GitHub's releases list for the repository contains only the rolling `tip` release (`releases/latest` returns 404), so the tags are the only releases.
+  - **Zig:** `v1.3.1` requires Zig 0.15.2 (`minimum_zig_version` in `build.zig.zon`). The pin requires 0.16.0, which is what `build-ghosttykit.sh` expects. Ghostty accepts only one Zig minor version (`requireZig`), so a Zig 0.16 toolchain can't build the tag.
+  - **API:** `v1.3.1`'s `ghostty.h` lacks what dmucode uses: `ghostty_surface_tty_name` (the terminal's tty, which names its tmux client; `TerminalView` uses it to follow `%client-session-changed`), `ghostty_surface_deny_clipboard_request`, and the `ghostty_clipboard_complete_s`, `ghostty_clipboard_confirm_s` and `ghostty_clipboard_read_result_e` types. The clipboard callbacks also have different signatures there: `read_clipboard_cb` returns `bool` instead of a read result, and `ghostty_surface_complete_clipboard_request` takes a string and a flag instead of a struct. `GhosttyRuntime` is written against the newer shape.
+  - **Everything else** dmucode uses (the other `ghostty_*` calls, `GHOSTTY_ACTION_DESKTOP_NOTIFICATION`, `RING_BELL`, `SHOW_CHILD_EXITED` and so on) is present in both.
+  - **Not verified:** why this particular `main` commit. It was most likely the head of `main` when the project was set up (it is dated the day before the review), and nothing is known to depend on it beyond the API above.
+- **Moving the pin:**
+  1. Diff `include/ghostty.h` between the old and new commit, and check each `ghostty_` call and `GHOSTTY_` constant in `Sources/dmucode` against it. A changed signature is a compile error; a changed behavior is not.
+  2. Check `minimum_zig_version` in `build.zig.zon`. If the Zig minor version changes, update the check in `scripts/build-ghosttykit.sh`, the comment at its top and the README.
+  3. Rebuild with `scripts/build-ghosttykit.sh`, then `swift build`.
+  4. Run the app: terminals render, typing, mouse and IME work, copy and paste (including the paste confirmation), the bell and desktop notifications show attention markers, and a detached tmux client closes its view.
+- **Goal:** move to a release tag as soon as one has the API above and builds with the Zig version we use. Until then, the build script refuses a Zig that isn't 0.16.x, so a mismatch fails early with a clear message instead of deep inside the Ghostty build.
+
+## Concurrency
+
+The package uses Swift 6 tooling in language mode 5, with complete concurrency checking (`StrictConcurrency`) reported as warnings, so the places where code crosses threads stay visible.
+
+- **Threads:** UI and model state live on the main thread. The rest is serial queues, each with one job:
+  - `dmucode.tmux`: tmux CLI commands from `SessionStore`.
+  - The control client's reader (stdout), its write queue (`dmucode.tmux-control.write`) and its heartbeat timer.
+  - `dmucode.git`: `git status` runs.
+  - libghostty calls its runtime callbacks (wakeup, actions, clipboard) on its own threads. `GhosttyRuntime` and `TerminalView` hop to the main thread before touching AppKit.
+  
+  Results come back to the main thread with `DispatchQueue.main.async`, not with actors.
+- **Warnings at the time of writing:** 111, from a clean `swift build --build-tests`:
+
+  | Where | Warnings | Mostly |
+  |---|---|---|
+  | `dmucode` (the app) | 87 | AppKit types (`TerminalView`'s `NSTextInputClient` conformance, `DebugHooks`, the app delegate) used from nonisolated code: 51 in `DebugHooks`, 18 in `GhosttyRuntime`, 14 in `main.swift` |
+  | `dmucodeCore` | 21 | Closures handed to `DispatchQueue` that aren't `@Sendable` (`TmuxControlClient`, `GitStatus`, `TmuxBackend`'s scheduler, `ControlCommandPipeline`) |
+  | `dmucodeTests` | 3 | Blocking `wait()` inside async tests |
+
+  By category: 64 main actor isolation, 42 Sendable, 1 global mutable state (`DebugHooks`' timer), plus the test waits.
+- **Toward language mode 6:**
+  - Mark the AppKit and SwiftUI side `@MainActor`: the window controller, views, `GhosttyRuntime` and the debug hook. Make protocol conformances such as `NSTextInputClient` explicitly isolated or `@preconcurrency`.
+  - Make the work closures in `StoreScheduler`, the control client and `GitStatusStore` `@Sendable`, along with the values they capture.
+  - Make `SessionStore` and `GitStatusStore` `@MainActor`, which they already are by convention.
+  - Replace the semaphore waits in the tests with `async` waiting.
+  
+  Each warning fixed in mode 5 is one fewer error when switching.
 
 ## Testing
 
-- **Unit tests** (`swift test`, Swift Testing) cover:
+- **Unit tests** (`swift test`, Swift Testing) import `dmucodeCore` with `@testable import`, so they run on a fresh clone without building GhosttyKit. They cover:
   - `ControlModeParser`, the list and `git status` parsers, and the pane title filters
   - `FuzzyMatch` and `SidebarLayout`
+  - `SessionStore`: selection and the remembered session, the restore placeholder, alerts, the error sources, and the switch between polling and control mode
+- **A fake tmux for `SessionStore`:** the store depends on protocols, not on `Process`. `TmuxBackend` is the tmux CLI (the real `Tmux` conforms), `TmuxControlConnection` is the control-mode client (`TmuxControlClient`), and `StoreScheduler` is where its work runs and when (queues, delays and the polling timer). The public `TmuxCommands` is the part of `TmuxBackend` that the app's `SessionStore.perform` closures get. The app creates the store with `SessionStore(tmux:)`, which wires in the real ones; tests use the internal initializer with `FakeTmux`, `FakeControl` and a `ManualScheduler` (in `Tests/dmucodeTests/SessionStoreFakes.swift`) that runs background work at once and moves time only when the test says so, so nothing waits. Each test gets its own `UserDefaults` suite, which is removed afterwards.
+  - `ExecutableLookup` (on a fake filesystem, plus throwaway shell scripts for the login-shell fallback) and the pausing of `GitStatusStore` (with a fake timer and runner)
 - **UI behavior** is checked with a test instance against its own tmux server (`DMUCODE_TMUX_SOCKET`), driven through the debug hook (`DMUCODE_DEBUG_DIR`). The hook's `state` command dumps:
   - the sidebar rows
   - the palette

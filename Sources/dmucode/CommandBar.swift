@@ -1,3 +1,4 @@
+import dmucodeCore
 import SwiftUI
 
 /// The palette's command mode (a leading ":", or ⌘:): a native take on

@@ -1,5 +1,5 @@
 import Testing
-@testable import dmucode
+@testable import dmucodeCore
 
 struct GitStatusTests {
     @Test func branchWithChangesConflictsAndUpstream() {

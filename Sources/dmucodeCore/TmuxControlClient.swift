@@ -31,14 +31,15 @@ final class TmuxControlClient {
     // Only touched from the output handle's reader queue.
     private var parser = ControlModeParser()
 
-    // Replies arrive in the order commands were sent. SuspendingClock, like
-    // the heartbeat timer, stands still while the Mac sleeps, so a command
-    // sent just before sleep isn't overdue on wake.
-    private let lock = NSLock()
-    private var pending: [(sent: SuspendingClock.Instant, reply: (Result<[String], TmuxError>) -> Void)] = []
-    private var exited = false
+    // Writes commands on its own queue and matches replies to them in send
+    // order. Its timestamps use SuspendingClock, like the heartbeat timer,
+    // which stands still while the Mac sleeps, so a command sent just before
+    // sleep isn't overdue on wake.
+    private let pipeline: ControlCommandPipeline
 
     init(tmux: Tmux, sessionID: String) throws {
+        let stdin = input.fileHandleForWriting
+        pipeline = ControlCommandPipeline { try stdin.write(contentsOf: $0) }
         process.executableURL = URL(fileURLWithPath: tmux.executable)
         process.arguments = tmux.globalArgs + ["-C", "attach-session", "-t", sessionID]
         process.environment = tmux.environment
@@ -89,25 +90,21 @@ final class TmuxControlClient {
         close()
     }
 
-    /// Detaches: tmux ends a control client when its stdin closes.
+    /// Detaches: tmux ends a control client when its stdin closes. The close
+    /// is queued behind pending writes; if one is stuck, the heartbeat's kill
+    /// ends the connection instead.
     func close() {
-        try? input.fileHandleForWriting.close()
+        let stdin = input.fileHandleForWriting
+        pipeline.afterWrites { try? stdin.close() }
     }
 
     /// Sends one command; `reply` receives its output lines on the main thread.
+    /// Returns at once: the write happens on a background queue, and a failed
+    /// write fails `reply` like any other error.
     func send(_ args: [String], reply: ((Result<[String], TmuxError>) -> Void)? = nil) {
         let line = args.map(Self.quote).joined(separator: " ") + "\n"
         Self.log.debug("> \(String(line.dropLast()), privacy: .public)")
-        lock.lock()
-        defer { lock.unlock() }
-        do {
-            guard !exited else { throw TmuxError(description: "tmux control client has exited") }
-            try input.fileHandleForWriting.write(contentsOf: Data(line.utf8))
-            pending.append((sent: .now, reply: reply ?? { _ in }))
-        } catch {
-            let failure = TmuxError(description: "\(error)")
-            DispatchQueue.main.async { reply?(.failure(failure)) }
-        }
+        pipeline.send(Data(line.utf8), reply: reply)
     }
 
     /// The sessions and their windows, queried over this connection.
@@ -135,7 +132,7 @@ final class TmuxControlClient {
         for event in parser.consume(data) {
             switch event {
             case .reply(let result):
-                if let reply = popPending() {
+                if let reply = pipeline.popReply() {
                     DispatchQueue.main.async { reply(result) }
                 }
             case .notification(let name, let args):
@@ -147,19 +144,10 @@ final class TmuxControlClient {
         }
     }
 
-    private func popPending() -> ((Result<[String], TmuxError>) -> Void)? {
-        lock.lock()
-        defer { lock.unlock() }
-        return pending.isEmpty ? nil : pending.removeFirst().reply
-    }
-
     // MARK: Heartbeat
 
     private func checkHeartbeat() {
-        lock.lock()
-        let oldest = exited ? nil : pending.first?.sent
-        let idle = !exited && pending.isEmpty
-        lock.unlock()
+        let (oldest, idle) = pipeline.heartbeatState()
 
         if let oldest, SuspendingClock.now - oldest > Self.replyTimeout {
             let pid = process.processIdentifier
@@ -175,12 +163,7 @@ final class TmuxControlClient {
 
     /// Runs once, whichever comes first: exit, or a stall.
     private func finish() {
-        lock.lock()
-        guard !exited else { lock.unlock(); return }
-        exited = true
-        let replies = pending.map(\.reply)
-        pending.removeAll()
-        lock.unlock()
+        guard let replies = pipeline.finish() else { return }
         heartbeat?.cancel()
 
         DispatchQueue.main.async { [weak self] in

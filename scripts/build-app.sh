@@ -5,6 +5,13 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
+# Without GhosttyKit, Package.swift leaves the app out and swift build would
+# build only dmucodeCore.
+if [ ! -d vendor/ghostty/macos/GhosttyKit.xcframework ]; then
+    echo "GhosttyKit.xcframework is missing: run scripts/build-ghosttykit.sh first" >&2
+    exit 1
+fi
+
 swift build -c release
 bin="$(swift build -c release --show-bin-path)/dmucode"
 

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import dmucodeCore
 import SwiftUI
 
 /// The window: tmux sessions in a sidebar, the selected session's terminal on
@@ -97,6 +98,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .sink { [weak self] _ in self?.clearSelectedAlert() }
             .store(in: &cancellables)
+        // Git polling only while the window can be seen: the app is active
+        // and the window isn't minimized, hidden or fully covered.
+        let center = NotificationCenter.default
+        center.publisher(for: NSApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in self?.updateGitPolling(appActive: true) }
+            .store(in: &cancellables)
+        center.publisher(for: NSApplication.didResignActiveNotification)
+            .sink { [weak self] _ in self?.updateGitPolling(appActive: false) }
+            .store(in: &cancellables)
+        for name in [NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification,
+                     NSWindow.didChangeOcclusionStateNotification] {
+            center.publisher(for: name, object: window)
+                .sink { [weak self] _ in self?.updateGitPolling() }
+                .store(in: &cancellables)
+        }
         store.$alerts.combineLatest(store.$sessions)
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _ in self?.updateDockBadge() }
@@ -244,6 +260,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         clearSelectedAlert()
+    }
+
+    /// Pauses the git polling unless the window can be seen. The notifications
+    /// for activation pass the new state, since `NSApp.isActive` may not have
+    /// caught up when they are delivered.
+    private func updateGitPolling(appActive: Bool = NSApp.isActive) {
+        guard let window else { return }
+        git.setActive(appActive && !window.isMiniaturized && window.occlusionState.contains(.visible))
     }
 
     /// The window is in front of the user, so the shown session is seen.
@@ -487,7 +511,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 /// Holds one TerminalView per opened session and shows the selected one,
 /// with the session's windows as tabs above it.
 final class TerminalContainerController: NSViewController {
-    private let tmux: Tmux
+    private let tmux: any TmuxCommands
     private let tabBar: NSView
     /// The command bar or the switcher (PaletteOverlay).
     private let overlay: NSView
@@ -503,7 +527,7 @@ final class TerminalContainerController: NSViewController {
     /// A terminal rang the bell (nil) or posted a notification (its text).
     var onAlert: ((_ sessionID: String, _ message: String?) -> Void)?
 
-    init(tmux: Tmux, tabBar: NSView, overlay: NSView) {
+    init(tmux: any TmuxCommands, tabBar: NSView, overlay: NSView) {
         self.tmux = tmux
         self.tabBar = tabBar
         self.overlay = overlay

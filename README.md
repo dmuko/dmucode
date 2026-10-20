@@ -30,7 +30,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 ## Requirements
 
 - An Apple silicon Mac with macOS 14 or later.
-- [tmux](https://github.com/tmux/tmux) 3.2 or later. 3.6 or later is recommended, and dmucode is developed with 3.8.
+- [tmux](https://github.com/tmux/tmux) 3.2 or later. 3.6 or later is recommended, and dmucode is developed with 3.8. dmucode looks for `tmux` (and `git`, for the tabs' git status) in `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` (MacPorts), the Nix profiles (`~/.nix-profile/bin`, `/etc/profiles/per-user/$USER/bin`, `/run/current-system/sw/bin`, `/nix/var/nix/profiles/default/bin`) and `/usr/bin`, then in the `PATH` it was started with. If it finds no tmux there, it asks your login shell (`$SHELL -l -c 'command -v tmux'`). Set `DMUCODE_TMUX` to use another one.
 - To build from source: Xcode 16 or later (Swift 6), and [Zig](https://ziglang.org) **0.16.x** for libghostty. Ghostty needs this exact minor version, so Homebrew's current `zig` won't do; install `zig@0.16`.
 
 ## Installation
@@ -230,7 +230,7 @@ Claude Code then sends its message (OSC 9) and a bell. By default (`auto`) it se
 | Variable | Effect |
 |---|---|
 | `DMUCODE_TMUX_SOCKET=name` | Use a separate tmux server (`tmux -L name`), e.g. to try things without touching your sessions. |
-| `DMUCODE_TMUX=/path/to/tmux` | Use this tmux instead of looking in `/opt/homebrew/bin`, `/usr/local/bin` and `/usr/bin`. |
+| `DMUCODE_TMUX=/path/to/tmux` | Use this tmux instead of searching for one (see [Requirements](#requirements)). |
 | `DMUCODE_RESURRECT_DIR=dir` | Look for the tmux-resurrect save here (for tests). |
 | `DMUCODE_DEBUG_DIR=dir` | Enable the debug hook (see [Development](#development)). |
 
@@ -243,7 +243,7 @@ Claude Code then sends its message (OSC 9) and a bell. By default (`auto`) it se
   ```
 
   Use `/usr/bin/log` in zsh, where `log` is a builtin. Use `stream --level debug` instead of `show --last 1h` to watch every tmux notification live.
-- **"tmux not found".** Apps started from Finder don't get your shell's `PATH`. Install tmux with Homebrew or set `DMUCODE_TMUX`.
+- **"tmux not found".** Apps started from Finder don't get your shell's `PATH`, so dmucode searches the locations listed under [Requirements](#requirements) and then asks your login shell. If tmux lives somewhere else, or your login shell can't find it, set `DMUCODE_TMUX`.
 - **No attention marker from Claude Code.** Set `allow-passthrough on` in tmux and `preferredNotifChannel` as above.
 - **Sessions aren't restored after a reboot.**
   - Check that both plugins are installed and that `~/.local/share/tmux/resurrect/last` exists.
@@ -257,6 +257,7 @@ Claude Code then sends its message (OSC 9) and a bell. By default (`auto`) it se
 - **Fixed tmux-resurrect directory:** a custom `@resurrect-dir` isn't supported for restoring at launch, because it can't be read before the server runs.
 - **Tab order:** `swap-window` sends no control-mode notification, so the tab order updates only after the next event.
 - **Missing features:** tabs can't be dragged, there is no settings window, and modifier-only key events (`flagsChanged`) and mouse pointer shapes aren't passed to the terminal yet.
+- **Opened sessions stay attached:** a session you have opened keeps its terminal (a Metal surface and a `tmux attach` process) until it ends or dmucode quits, so switching back is instant. With dozens of opened sessions this adds up. There's deliberately no cap: the hidden terminal is what receives a session's notifications (OSC 9/777, e.g. Claude Code's text), so closing it would drop those for exactly the sessions you aren't looking at. Bells still reach the sidebar through tmux.
 - **Shared tmux state:** dmucode's control client counts as an attached client in tmux (`tmux ls` shows a session as attached), and your `client-attached` hooks run for it.
 
 ## Development
@@ -266,7 +267,8 @@ swift build             # debug build (the app bundle comes from scripts/build-a
 swift test              # unit tests (Swift Testing)
 ```
 
-- **Tests:** the unit tests cover the parsers (tmux control mode, tmux list output, `git status`), the palette's fuzzy matching, and the sidebar layout. They import the app target with `@testable import dmucode`, so they need GhosttyKit like the build does.
+- **Tests:** the unit tests cover the parsers (tmux control mode, tmux list output, `git status`), the palette's fuzzy matching, and the sidebar layout. They import the `dmucodeCore` library target with `@testable import dmucodeCore`, so `swift test` builds only `dmucodeCore` and works on a fresh clone without GhosttyKit. The app target needs GhosttyKit, so `swift build` and `scripts/build-app.sh` need it built first.
+- **CI:** [.github/workflows/ci.yml](.github/workflows/ci.yml) runs `swift test` on a macOS runner for every pull request and push to `main`. It checks out without the Ghostty submodule, so it covers `dmucodeCore` only; the app build isn't in CI.
 - **Trying changes safely:** run a second instance against its own tmux server, so your real sessions aren't touched:
 
   ```bash

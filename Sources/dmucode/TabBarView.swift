@@ -1,3 +1,4 @@
+import dmucodeCore
 import SwiftUI
 
 /// The selected session's tmux windows as tabs above the terminal. Clicking

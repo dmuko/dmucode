@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import dmucode
+@testable import dmucodeCore
 
 struct ControlModeParserTests {
     /// Feeds the chunks in order, as separate reads from the pipe.
