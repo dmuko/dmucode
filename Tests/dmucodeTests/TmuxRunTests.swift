@@ -23,10 +23,10 @@ struct TmuxRunTests {
         let tmux = Tmux(executable: script.path, socketName: nil)
         let done = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var result: Result<[TmuxSession], Error>?
-        DispatchQueue.global().async {
+        Thread {
             result = Result { try tmux.listSessions() }
             done.signal()
-        }
+        }.start()
         try #require(done.wait(timeout: .now() + 10) == .success, "Tmux.run deadlocked")
         #expect(throws: TmuxError.self) { try result?.get() }
         if case .failure(let error as TmuxError) = result {

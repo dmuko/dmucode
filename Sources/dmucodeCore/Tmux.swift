@@ -361,13 +361,14 @@ public struct Tmux {
         }
         // Both pipes at once: reading one to the end first would deadlock
         // once the other fills its buffer (64 KB) and the process blocks.
+        // A thread of its own, not a dispatch queue: a blocking read must not
+        // depend on a free worker thread (CI runners have few).
         var stderr = Data()
-        let stderrRead = DispatchGroup()
-        stderrRead.enter()
-        DispatchQueue.global().async {
+        let stderrRead = DispatchSemaphore(value: 0)
+        Thread {
             stderr = err.fileHandleForReading.readDataToEndOfFile()
-            stderrRead.leave()
-        }
+            stderrRead.signal()
+        }.start()
         let stdout = out.fileHandleForReading.readDataToEndOfFile()
         stderrRead.wait()
         process.waitUntilExit()
