@@ -26,7 +26,7 @@ A review of the codebase before publishing it as open source, from two angles: i
 7. [ ] **The sidebar layout grows without bound.** Every session name ever seen stays in the `UserDefaults` JSON forever, and the stored format has no version field. Add a version and prune names not seen for, say, 30 days.
 8. [ ] **Git polling every 3 seconds** for every tab directory, also while the app is inactive ([GitStatus.swift:70](../Sources/dmucodeCore/GitStatus.swift#L70)). Costs battery in large repositories. Pause the timer while the app is in the background or the window is hidden.
 9. [x] **Hidden terminals live forever.** Every opened session keeps a Metal surface and a tmux client process alive. With dozens of sessions this should be capped LRU-style, or at least listed under Known limitations.
-10. [ ] **The control client writes under the lock on the main thread** ([TmuxControlClient.swift:101](../Sources/dmucodeCore/TmuxControlClient.swift#L101)). If the server stalls and stops reading stdin, the main thread blocks once the pipe fills, and the heartbeat thread then waits for the same lock, so the stall detector itself stops working. Unlikely with small commands, but the write belongs on its own queue.
+10. [x] **The control client writes under the lock on the main thread** ([TmuxControlClient.swift:101](../Sources/dmucodeCore/TmuxControlClient.swift#L101)). If the server stalls and stops reading stdin, the main thread blocks once the pipe fills, and the heartbeat thread then waits for the same lock, so the stall detector itself stops working. Unlikely with small commands, but the write belongs on its own queue.
 
 ## Smaller
 

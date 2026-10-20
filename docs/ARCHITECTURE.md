@@ -22,7 +22,7 @@ The package has two targets. `dmucodeCore` (library) holds everything that doesn
 | [main.swift](../Sources/dmucode/main.swift) | App delegate, menus, startup. |
 | [MainWindowController.swift](../Sources/dmucode/MainWindowController.swift) | The window: sidebar, tab bar, terminals, palette, theme and fullscreen handling. Also `TerminalContainerController`, which holds one terminal per opened session. |
 | [SessionStore.swift](../Sources/dmucodeCore/SessionStore.swift) | The sidebar's model: sessions, selection, attention markers, recent sessions, the sidebar layout. Owns the control-mode client and falls back to polling. |
-| [TmuxControlClient.swift](../Sources/dmucodeCore/TmuxControlClient.swift) | The control-mode client: process, heartbeat, logging, and `ControlModeParser` for the protocol. |
+| [TmuxControlClient.swift](../Sources/dmucodeCore/TmuxControlClient.swift) | The control-mode client: process, heartbeat, logging, and `ControlModeParser` for the protocol. Its write queue and reply matching are in `ControlCommandPipeline`. |
 | [Tmux.swift](../Sources/dmucodeCore/Tmux.swift) | The tmux CLI wrapper, the list formats and their parsers; `TmuxSession`, `TmuxWindow`, `TmuxPane`. |
 | [SidebarView.swift](../Sources/dmucode/SidebarView.swift), [SidebarLayout.swift](../Sources/dmucodeCore/SidebarLayout.swift) | The sidebar, and its order and groups kept by session name. |
 | [TabBarView.swift](../Sources/dmucode/TabBarView.swift), [GitStatus.swift](../Sources/dmucodeCore/GitStatus.swift) | The tabs and their git status. |
@@ -46,6 +46,7 @@ dmucode keeps one control client and listens for `%sessions-changed`, `%session-
   - Every 10 seconds, if no command is waiting for a reply, it sends a no-op (`display-message -p ok`).
   - If the oldest pending reply is more than 5 seconds late, the client is killed, and dmucode polls until it can reconnect. A stall is therefore noticed within 10–20 seconds.
   - The timing uses `SuspendingClock`, so time asleep doesn't count.
+  - Commands are written to the client's stdin on a dedicated serial queue (`ControlCommandPipeline`), never under the lock and never on the caller's thread, so a server that stops reading can't block the main thread or the heartbeat. A command counts as overdue from the moment it is queued, so a stuck write is detected like a missing reply; a failed write fails that command's callback and the ones queued after it.
   - The tmux client hands its stdin and stdout to the server, which reads and writes them directly. So a stall happens on the server side: stopping the client process (`kill -STOP`) doesn't stall the connection, stopping the server does.
 - **Logging:** connecting, exiting and stalls go to the unified log (subsystem `com.dmuko.dmucode`, category `control`). Notifications and sent commands are logged at debug level, which isn't persisted; watch them with `log stream --level debug`.
 - **Switching sessions inside tmux:** `%client-session-changed` includes the client's tty. If it is the tty of one of dmucode's terminals (`ghostty_surface_tty_name`), that terminal moves to the new session and the sidebar follows (`prefix s`, `switch-client`).
