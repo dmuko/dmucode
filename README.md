@@ -29,14 +29,23 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 
 ## Requirements
 
-- macOS 14 or later.
-- Xcode 16 or later (Swift 6).
+- An Apple silicon Mac with macOS 14 or later.
 - [tmux](https://github.com/tmux/tmux) 3.2 or later. 3.6 or later is recommended, and dmucode is developed with 3.8.
-- [Zig](https://ziglang.org) **0.16.x**, to build libghostty. Ghostty needs this exact minor version, so Homebrew's current `zig` won't do; install `zig@0.16`.
+- To build from source: Xcode 16 or later (Swift 6), and [Zig](https://ziglang.org) **0.16.x** for libghostty. Ghostty needs this exact minor version, so Homebrew's current `zig` won't do; install `zig@0.16`.
 
 ## Installation
 
-dmucode is built from source. Building libghostty takes about five minutes the first time.
+### Homebrew
+
+```bash
+brew install --cask dmuko/tap/dmucode
+```
+
+This installs tmux too. `brew upgrade --cask dmucode` updates the app; your sessions keep running in tmux meanwhile. Releases are signed with a Developer ID and notarized, and the DMGs are also on the [releases page](https://github.com/dmuko/dmucode/releases).
+
+### From source
+
+Building libghostty takes about five minutes the first time.
 
 ```bash
 brew install tmux zig@0.16
@@ -52,7 +61,7 @@ open /Applications/dmucode.app
 
 `build-ghosttykit.sh` finds Homebrew's `zig@0.16` by itself; to use another Zig, set `ZIG=/path/to/zig`. The app is signed ad hoc, which is enough to run it on the machine that built it.
 
-**Updating:**
+**Updating a source build:**
 
 1. Run `git pull` and `git submodule update`.
 2. If the `vendor/ghostty` submodule moved, run `build-ghosttykit.sh` again.
@@ -286,6 +295,7 @@ xcrun notarytool store-credentials dmucode --apple-id <apple id> --team-id <team
 - **Keychain:** notarytool reads its credentials from the login keychain, so a run fails while the Mac is locked. The first submissions of a new Developer ID team can take hours.
 - **Entitlements and usage descriptions:** the same as Ghostty's app. Programs running in the terminal (camera, microphone, AppleScript…) ask for these in dmucode's name, and the hardened runtime blocks them without the entitlements.
 - **Version:** bump `CFBundleShortVersionString` and `CFBundleVersion` in [Info.plist](Resources/Info.plist) before a release.
+- **Publishing:** tag the release commit (`git tag -a v<version>`), push the tag, and attach the DMG with `gh release create v<version> build/release/dmucode-<version>.dmg --verify-tag`. Then update `version` and `sha256` (`shasum -a 256` of the DMG) in `Casks/dmucode.rb` in [dmuko/homebrew-tap](https://github.com/dmuko/homebrew-tap), and check it with `brew audit --cask --online --strict dmuko/tap/dmucode`.
 - **Architecture:** Apple silicon only, as GhosttyKit is built for arm64. Users install tmux themselves.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes how dmucode works: the source layout, the control-mode connection, attention markers, the palette's command mode, restoring at launch and the libghostty details.
