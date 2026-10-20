@@ -13,7 +13,22 @@ import Foundation
 /// shown there as "api". The prefix matches a group whatever its case, so
 /// "projects/x" joins an existing "Projects". Dragging it elsewhere
 /// afterwards is up to the user.
+///
+/// Each name also remembers when a session list last contained it, and
+/// `pruned(now:)` forgets names unseen for 30 days. The stored JSON has a
+/// version (see `currentVersion`).
 public struct SidebarLayout: Codable, Equatable {
+    /// The stored format. 1 is the original, unversioned one: only `entries`.
+    /// 2 adds `version` and `lastSeen`.
+    static let currentVersion = 2
+
+    /// How long a name may go unseen before `pruned(now:)` forgets it.
+    static let retention: TimeInterval = 30 * 24 * 60 * 60
+
+    /// A stamp is renewed only when this old, so that a listing every few
+    /// seconds doesn't rewrite the stored layout every time.
+    static let stampGranularity: TimeInterval = 60 * 60
+
     enum Entry: Codable, Equatable {
         case group(String)
         case session(String)
@@ -46,7 +61,65 @@ public struct SidebarLayout: Codable, Equatable {
 
     private(set) var entries: [Entry] = []
 
+    /// When each session name was last in a session list. A name without a
+    /// stamp (from the version 1 format) is stamped by `pruned(now:)`.
+    private(set) var lastSeen: [String: Date] = [:]
+
     public init() {}
+
+    // MARK: Storage
+
+    private enum CodingKeys: String, CodingKey { case version, entries, lastSeen }
+
+    /// The layout of any readable version. A newer version than this build
+    /// knows throws `UnsupportedVersion`; `load(from:)` handles that.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        guard version <= Self.currentVersion else { throw UnsupportedVersion(version: version) }
+        entries = try container.decode([Entry].self, forKey: .entries)
+        lastSeen = try container.decodeIfPresent([String: Date].self, forKey: .lastSeen) ?? [:]
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(Self.currentVersion, forKey: .version)
+        try container.encode(entries, forKey: .entries)
+        try container.encode(lastSeen, forKey: .lastSeen)
+    }
+
+    /// Stored by a newer dmucode than this one.
+    public struct UnsupportedVersion: Error, Equatable {
+        public let version: Int
+    }
+
+    /// What `load(from:)` made of the stored data.
+    public struct Loaded {
+        public var layout: SidebarLayout
+        /// False when the data is in a newer format. The layout is then the
+        /// default one, kept in memory only: saving it would overwrite the
+        /// user's layout, which the newer version can still read.
+        public var mayOverwrite: Bool
+    }
+
+    /// Reads stored data (nil if there is none). Unversioned data is the
+    /// version 1 format and is migrated. Data in a newer format yields the
+    /// defaults without permission to overwrite it; unreadable data yields
+    /// the defaults, which may replace it.
+    public static func load(from data: Data?) -> Loaded {
+        guard let data else { return Loaded(layout: SidebarLayout(), mayOverwrite: true) }
+        do {
+            return Loaded(layout: try JSONDecoder().decode(SidebarLayout.self, from: data), mayOverwrite: true)
+        } catch is UnsupportedVersion {
+            return Loaded(layout: SidebarLayout(), mayOverwrite: false)
+        } catch {
+            return Loaded(layout: SidebarLayout(), mayOverwrite: true)
+        }
+    }
+
+    public func encoded() -> Data? {
+        try? JSONEncoder().encode(self)
+    }
 
     public var groups: [String] { entries.compactMap(\.groupName) }
 
@@ -71,9 +144,14 @@ public struct SidebarLayout: Codable, Equatable {
         }
     }
 
-    /// Adds names seen for the first time: at the end of their prefix's
-    /// group ("work/api" → work), else at the end of the ungrouped ones.
-    mutating func include(_ names: [String]) {
+    /// Notes that these names are present, and adds the ones seen for the
+    /// first time: at the end of their prefix's group ("work/api" → work),
+    /// else at the end of the ungrouped ones.
+    mutating func include(_ names: [String], now: Date = Date()) {
+        for name in names {
+            if let seen = lastSeen[name], seen <= now, now.timeIntervalSince(seen) < Self.stampGranularity { continue }
+            lastSeen[name] = now
+        }
         var known = Set(entries.compactMap { entry -> String? in
             if case .session(let name) = entry { return name }
             return nil
@@ -97,6 +175,7 @@ public struct SidebarLayout: Codable, Equatable {
         let oldPrefix = Self.prefix(of: old)?.group, newPrefix = Self.prefix(of: new)?.group
         let inOldGroup = oldPrefix.map { Self.same(group(ofSession: old), $0) } ?? false
         entries.removeAll { $0 == .session(new) }
+        lastSeen[old] = nil
         guard let index = entries.firstIndex(of: .session(old)) else {
             include([new])
             return
@@ -110,6 +189,48 @@ public struct SidebarLayout: Codable, Equatable {
         } else if inOldGroup {
             setGroup(nil, ofSession: new)
         }
+    }
+
+    /// Forgets the names not seen for 30 days, except those in `present`.
+    /// A pruned name leaves its group, and a group whose sessions were all
+    /// pruned goes with them; a group that was empty already stays. Names
+    /// without a stamp (version 1 data, or placed before ever being listed)
+    /// are stamped `now` first, so that old data isn't pruned on first load.
+    func pruned(now: Date, present: Set<String> = []) -> SidebarLayout {
+        var layout = self
+        for case .session(let name) in entries where layout.lastSeen[name] == nil {
+            layout.lastSeen[name] = now
+        }
+        let cutoff = now.addingTimeInterval(-Self.retention)
+        let stale = Set(entries.compactMap { entry -> String? in
+            guard case .session(let name) = entry, !present.contains(name),
+                  let seen = layout.lastSeen[name], seen < cutoff else { return nil }
+            return name
+        })
+        if !stale.isEmpty {
+            for group in groups {
+                guard let block = layout.groupRange(group) else { continue }
+                let members = layout.entries[block].dropFirst()
+                if !members.isEmpty, members.allSatisfy({ entry in
+                    if case .session(let name) = entry { return stale.contains(name) }
+                    return false
+                }) {
+                    layout.entries.removeSubrange(block)
+                }
+            }
+            layout.entries.removeAll { entry in
+                if case .session(let name) = entry { return stale.contains(name) }
+                return false
+            }
+        }
+        // Stamps follow the entries: none for names that were never placed
+        // or have gone.
+        let remaining = Set(layout.entries.compactMap { entry -> String? in
+            if case .session(let name) = entry { return name }
+            return nil
+        })
+        layout.lastSeen = layout.lastSeen.filter { remaining.contains($0.key) }
+        return layout
     }
 
     /// "work/api" → ("work", "api"); nil without a "/" or with nothing

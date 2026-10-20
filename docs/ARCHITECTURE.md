@@ -94,6 +94,8 @@ A marker has two sources.
 - **Renames:** they are followed from `%session-renamed`. tmux reuses session ids after a server restart, so a changed name for an id isn't proof of a rename.
 - **Automatic groups:** `group/name` sessions are filed when a name is first seen and when a rename changes the prefix, matching existing groups regardless of case.
 - **Storage:** the layout is stored as JSON in the user defaults, per tmux socket (`sidebarLayout-<socket>`).
+- **Format version:** the JSON is `{"version": 2, "entries": [...], "lastSeen": {"<name>": <seconds since 2001-01-01>}}`. Version 1 was unversioned (only `entries`) and is read as is. Data with a newer `version` than the build knows isn't read: the sidebar starts from defaults in memory and `SessionStore` doesn't save the layout that run, so a newer dmucode's layout isn't overwritten after a downgrade. Unreadable data is replaced.
+- **Pruning:** each successful session listing stamps the names in it in `lastSeen` (renewed only when an hour old, to avoid rewriting the defaults on every event), then `pruned(now:present:)` forgets the names not seen for 30 days. Names in the listing are never pruned. A pruned name leaves its group, and a group that loses all its sessions goes too; groups that were empty stay. Names without a stamp (version 1 data) are stamped on the first listing, so nothing is pruned right after the upgrade. A name that comes back is added as new, at the end.
 
 ## Ghostty configuration
 

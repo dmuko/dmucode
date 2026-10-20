@@ -92,11 +92,14 @@ public final class SessionStore: ObservableObject {
 
     public init(tmux: Tmux) {
         self.tmux = tmux
-        if let data = UserDefaults.standard.data(forKey: layoutKey),
-           let saved = try? JSONDecoder().decode(SidebarLayout.self, from: data) {
-            layout = saved
-        }
+        let loaded = SidebarLayout.load(from: UserDefaults.standard.data(forKey: layoutKey))
+        layout = loaded.layout
+        layoutMayOverwrite = loaded.mayOverwrite
     }
+
+    /// False while the stored layout is in a newer format than we know: it
+    /// is left alone, and this run's layout isn't saved.
+    private var layoutMayOverwrite = true
 
     public func start() {
         startPolling()
@@ -258,7 +261,7 @@ public final class SessionStore: ObservableObject {
 
     private func setLayout(_ layout: SidebarLayout) {
         self.layout = layout
-        if let data = try? JSONEncoder().encode(layout) {
+        if layoutMayOverwrite, let data = layout.encoded() {
             UserDefaults.standard.set(data, forKey: layoutKey)
         }
     }
@@ -394,7 +397,10 @@ public final class SessionStore: ObservableObject {
                 }
             }
             var layout = self.layout
-            layout.include(sessions.map(\.name))
+            let names = sessions.map(\.name)
+            let now = Date()
+            layout.include(names, now: now)
+            layout = layout.pruned(now: now, present: Set(names))
             if layout != self.layout { setLayout(layout) }
             sessions = layout.sorted(sessions)
             if sessions != self.sessions { self.sessions = sessions }
