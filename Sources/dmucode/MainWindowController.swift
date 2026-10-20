@@ -488,7 +488,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 /// Holds one TerminalView per opened session and shows the selected one,
 /// with the session's windows as tabs above it.
 final class TerminalContainerController: NSViewController {
-    private let tmux: Tmux
+    private let tmux: any TmuxCommands
     private let tabBar: NSView
     /// The command bar or the switcher (PaletteOverlay).
     private let overlay: NSView
@@ -504,7 +504,7 @@ final class TerminalContainerController: NSViewController {
     /// A terminal rang the bell (nil) or posted a notification (its text).
     var onAlert: ((_ sessionID: String, _ message: String?) -> Void)?
 
-    init(tmux: Tmux, tabBar: NSView, overlay: NSView) {
+    init(tmux: any TmuxCommands, tabBar: NSView, overlay: NSView) {
         self.tmux = tmux
         self.tabBar = tabBar
         self.overlay = overlay
