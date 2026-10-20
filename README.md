@@ -261,13 +261,32 @@ swift test              # unit tests (Swift Testing)
 - **Trying changes safely:** run a second instance against its own tmux server, so your real sessions aren't touched:
 
   ```bash
-  tmux -L dev new-session -d
+  tmux -L dev -f /dev/null new-session -d
   DMUCODE_TMUX_SOCKET=dev build/dmucode.app/Contents/MacOS/dmucode
   ```
+
+  `-f /dev/null` keeps your tmux config out of the test server: with tmux-continuum's `@continuum-restore on`, it would restore your real sessions into it, programs included.
 
 - **Debug hook:** with `DMUCODE_DEBUG_DIR=dir`, the app runs commands written to `dir/cmd`. It can take snapshots of the window, type keys, run menu shortcuts, drive the palette and dump its state, all without Accessibility or Screen Recording permissions. The commands are listed in [DebugHooks.swift](Sources/dmucode/DebugHooks.swift).
 - **Updating Ghostty:** move the `vendor/ghostty` submodule, run `build-ghosttykit.sh` and test, since `ghostty.h` may have changed.
 - **App icon:** [scripts/make-icon.swift](scripts/make-icon.swift) draws it. `swift scripts/make-icon.swift icns mocha Resources/AppIcon.icns` writes the icon, and `swift scripts/make-icon.swift preview build/icon-preview.png` writes a comparison of all palettes.
+
+### Releasing
+
+A release for direct distribution (outside the App Store) is signed with a Developer ID and notarized:
+
+```bash
+# once: store notarization credentials in the keychain (app-specific password from appleid.apple.com)
+xcrun notarytool store-credentials dmucode --apple-id <apple id> --team-id <team id>
+./scripts/release.sh    # writes build/release/dmucode-<version>.dmg
+```
+
+- **What it does:** [release.sh](scripts/release.sh) builds the app with `build-app.sh` and signs it with the Developer ID Application certificate, using the hardened runtime, a secure timestamp and [the entitlements](Resources/dmucode.entitlements). It notarizes the app and staples its ticket, then makes a DMG (the app and a link to Applications), signs, notarizes and staples that, and checks both with `spctl`. If Apple rejects a submission, it prints Apple's log.
+- **Resuming:** an unchanged app that was notarized before, e.g. by a run that failed at the DMG, just gets its ticket stapled.
+- **Keychain:** notarytool reads its credentials from the login keychain, so a run fails while the Mac is locked. The first submissions of a new Developer ID team can take hours.
+- **Entitlements and usage descriptions:** the same as Ghostty's app. Programs running in the terminal (camera, microphone, AppleScript…) ask for these in dmucode's name, and the hardened runtime blocks them without the entitlements.
+- **Version:** bump `CFBundleShortVersionString` and `CFBundleVersion` in [Info.plist](Resources/Info.plist) before a release.
+- **Architecture:** Apple silicon only, as GhosttyKit is built for arm64. Users install tmux themselves.
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes how dmucode works: the source layout, the control-mode connection, attention markers, the palette's command mode, restoring at launch and the libghostty details.
 
