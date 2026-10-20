@@ -298,7 +298,7 @@ xcrun notarytool store-credentials dmucode --apple-id <apple id> --team-id <team
 - **Resuming:** an unchanged app that was notarized before, e.g. by a run that failed at the DMG, just gets its ticket stapled.
 - **Keychain:** notarytool reads its credentials from the login keychain, so a run fails while the Mac is locked. The first submissions of a new Developer ID team can take hours.
 - **Entitlements and usage descriptions:** the same as Ghostty's app. Programs running in the terminal (camera, microphone, AppleScript…) ask for these in dmucode's name, and the hardened runtime blocks them without the entitlements.
-- **Version:** bump `CFBundleShortVersionString` and `CFBundleVersion` in [Info.plist](Resources/Info.plist) before a release.
+- **Version:** bump `CFBundleShortVersionString` and `CFBundleVersion` in [Info.plist](Resources/Info.plist) before a release. Edit the file as text: `PlistBuddy` and `plutil` rewrite it, sorting the keys and dropping its comments.
 - **Publishing:** tag the release commit (`git tag -a v<version>`), push the tag, and attach the DMG with `gh release create v<version> build/release/dmucode-<version>.dmg --verify-tag`. Then update `version` and `sha256` (`shasum -a 256` of the DMG) in `Casks/dmucode.rb` in [dmuko/homebrew-tap](https://github.com/dmuko/homebrew-tap), and check it with `brew audit --cask --online --strict dmuko/tap/dmucode`.
 - **Architecture:** Apple silicon only, as GhosttyKit is built for arm64. Users install tmux themselves.
 
