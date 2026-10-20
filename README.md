@@ -12,6 +12,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 
 ## Features
 
+- **A config file.** `~/.config/dmucode/config`, in Ghostty's syntax, remaps the keyboard shortcuts and reloads when saved.
 - **Live session sidebar.** dmucode keeps a tmux control-mode connection, so new, renamed and closed sessions show up immediately, without polling.
 - **Ghostty terminals.** Each session gets its own libghostty surface with your `~/.config/ghostty/config`: fonts, themes, background opacity and blur. Saving the config applies it right away.
 - **Windows as tabs.** Each tab shows the directory of the window's active pane and, inside a git repository, the branch and whether there are changes, conflicts or unpushed commits.
@@ -142,27 +143,58 @@ For Claude Code, see [Claude Code notifications](#claude-code-notifications).
 
 ### Keyboard shortcuts
 
-| Shortcut | Action |
-|---|---|
-| ⌘N | New session |
-| ⌘R | Rename the selected session |
-| ⌘1 … ⌘9 | Go to the session at that position in the sidebar |
-| ⌘↓ / ⌘↑ | Next / previous session |
-| ⌘K | Palette: find a session, window or pane |
-| ⌘: | Palette in command mode (tmux command) |
-| ⌘T | New tmux window (tab) in the current pane's directory |
-| ⌘W | Close the current tmux window (asks first) |
-| ⌥⌘R | Rename the current tmux window |
-| ⌘→ / ⌘← | Next / previous tab |
-| ⌥⌘1 … ⌥⌘9 | Go to the tab at that position (counted from the left, not tmux's index) |
-| ⌃⌘S | Show / hide the sidebar |
-| ⌃⌘F | Native full screen |
-| ⇧⌘, | Reload the Ghostty config |
-| ⌘C / ⌘V | Copy / paste |
+The action names are for remapping in the [config file](#dmucode).
+
+| Shortcut | Action | Name |
+|---|---|---|
+| ⌘N | New session | `new_session` |
+| ⌘R | Rename the selected session | `rename_session` |
+| | Kill the selected session (asks first) | `kill_session` |
+| ⌘1 … ⌘9 | Go to the session at that position in the sidebar | `goto_session:1` … `goto_session:9` |
+| ⌘↓ / ⌘↑ | Next / previous session | `next_session` / `previous_session` |
+| ⌘K | Palette: find a session, window or pane | `switch_session` |
+| ⌘: | Palette in command mode (tmux command) | `tmux_command` |
+| ⌘T | New tmux window (tab) in the current pane's directory | `new_tab` |
+| ⌘W | Close the current tmux window (asks first) | `close_tab` |
+| ⌥⌘R | Rename the current tmux window | `rename_tab` |
+| ⌘→ / ⌘← | Next / previous tab | `next_tab` / `previous_tab` |
+| ⌥⌘1 … ⌥⌘9 | Go to the tab at that position (counted from the left, not tmux's index) | `goto_tab:1` … `goto_tab:9` |
+| ⌃⌘S | Show / hide the sidebar | `toggle_sidebar` |
+| ⌃⌘F | Native full screen | `toggle_fullscreen` |
+| ⌘M | Minimize | `minimize` |
+| ⇧⌘, | Reload the dmucode and Ghostty configs | `reload_config` |
+| ⌘C / ⌘V | Copy / paste | `copy` / `paste` |
+| ⌘A | Select all | `select_all` |
+| ⌘H / ⌘Q | Hide / quit dmucode | `hide` / `quit` |
 
 ⌘K replaces Ghostty's default `clear_screen` binding. In tmux, `clear` or `C-l` clears the pane.
 
 ## Configuration
+
+### dmucode
+
+dmucode reads `~/.config/dmucode/config` (`$XDG_CONFIG_HOME/dmucode/config` if that is set, or the file named by `DMUCODE_CONFIG`). The syntax is Ghostty's: one `key = value` per line, `#` starts a comment. The file is optional. Saving it applies the changes, as does ⇧⌘, (*Reload Config*), and lines with errors are skipped and listed in a sheet while the rest applies.
+
+The only option so far is `keybind`, which gives a shortcut to one of the actions listed under [Keyboard shortcuts](#keyboard-shortcuts):
+
+```
+# Free ⌘K for Ghostty's clear_screen and find sessions with ⌘⇧K instead.
+keybind = cmd+shift+k=switch_session
+keybind = cmd+k=unbind
+
+# Sessions with ⌘J/⌘L; the arrows go back to Ghostty.
+keybind = cmd+j=previous_session
+keybind = cmd+l=next_session
+keybind = cmd+up=unbind
+keybind = cmd+down=unbind
+
+keybind = ctrl+shift+t=new_tab
+keybind = f5=reload_config
+```
+
+- **Triggers** are modifiers and a key joined with `+`: `cmd` (or `command`, `super`), `ctrl`, `alt` (or `opt`, `option`) and `shift`, then a character (letters in either case) or a key name: `up`, `down`, `left`, `right`, `return` (`enter`), `tab`, `escape` (`esc`), `space`, `backspace`, `delete`, `home`, `end`, `page_up`, `page_down`, `f1` … `f12`. Punctuation can be written as is (`cmd+:`, `cmd+=`, `cmd++`) or by name: `plus`, `minus`, `equal`, `comma`, `period`, `semicolon`, `colon`, `slash`, `backslash`, `grave`, `apostrophe`, `quote`, `bracket_left`, `bracket_right`. Everything but a function key needs a modifier.
+- **An action has one shortcut.** Binding a trigger takes it from the action that had it, so `keybind = cmd+k=new_session` leaves `switch_session` without one; `keybind = cmd+k=unbind` frees the trigger. Later lines win. A key that no action uses goes to the terminal, so unbinding `cmd+k` gives it back to Ghostty's `clear_screen`.
+- **Control shortcuts** such as `ctrl+shift+t` take the key from the terminal and from tmux. Shortcuts with ⌘ don't reach the terminal anyway.
 
 ### Ghostty
 
@@ -171,7 +203,7 @@ dmucode reads the Ghostty config the way Ghostty does: `~/.config/ghostty/config
 The config reloads without restarting in three ways:
 
 - **Saving it:** changes to `config`, `config.ghostty` or a file under `themes/` in those directories apply right away. Files pulled in with `config-file` from elsewhere aren't watched.
-- **⇧⌘,** (*dmucode → Reload Ghostty Config*).
+- **⇧⌘,** (*dmucode → Reload Config*).
 - **Ghostty's own `reload_config` keybinding.**
 
 Lines with errors are skipped and the rest applies, as in Ghostty, and a sheet lists the skipped lines. In native full screen the window and sidebar are opaque, as in Ghostty.
@@ -248,6 +280,7 @@ Claude Code then sends its message (OSC 9) and a bell. By default (`auto`) it se
 | `DMUCODE_TMUX_SOCKET=name` | Use a separate tmux server (`tmux -L name`), e.g. to try things without touching your sessions. |
 | `DMUCODE_TMUX=/path/to/tmux` | Use this tmux instead of searching for one (see [Requirements](#requirements)). |
 | `DMUCODE_SESH=/path/to/sesh` | Use this sesh for session templates (see [sesh](#sesh)). |
+| `DMUCODE_CONFIG=/path/to/config` | Read this config file instead of `~/.config/dmucode/config` (see [dmucode](#dmucode)). |
 | `DMUCODE_RESURRECT_DIR=dir` | Look for the tmux-resurrect save here (for tests). |
 | `DMUCODE_DEBUG_DIR=dir` | Enable the debug hook (see [Development](#development)). |
 

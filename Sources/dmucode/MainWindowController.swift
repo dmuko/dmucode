@@ -165,7 +165,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             .store(in: &cancellables)
         GhosttyRuntime.shared.$configErrors
             .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.showConfigErrors($0) }
+            .sink { [weak self] in self?.showConfigErrors($0, of: .ghostty) }
             .store(in: &cancellables)
     }
 
@@ -174,7 +174,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         applyWindowBackground(chrome.theme)
-        showConfigErrors(GhosttyRuntime.shared.configErrors)
+        showConfigErrors(GhosttyRuntime.shared.configErrors, of: .ghostty)
     }
 
     /// Like Ghostty's own app: with background-opacity < 1 the window must be
@@ -208,28 +208,38 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         terminals.applyTheme(theme)
     }
 
-    // MARK: Ghostty config
+    // MARK: Config
 
-    @objc func reloadGhosttyConfig(_ sender: Any?) {
+    /// Set by the app delegate: reads dmucode's own config again.
+    var reloadAppConfig: (() -> Void)?
+
+    /// Reload Config (⇧⌘,): both the dmucode and the Ghostty config.
+    @objc func reloadConfig(_ sender: Any?) {
+        reloadAppConfig?()
         GhosttyRuntime.shared.reloadConfig()
     }
 
-    /// The errors last shown, so saving the same broken config again (or
-    /// reloading) doesn't repeat the sheet.
-    private var shownConfigErrors: [String] = []
+    enum ConfigSource: String {
+        case ghostty = "Ghostty"
+        case dmucode
+    }
 
-    /// libghostty skips bad lines and applies the rest, like Ghostty; this
-    /// says which were skipped.
-    private func showConfigErrors(_ errors: [String]) {
+    /// The errors last shown per config, so saving the same broken config
+    /// again (or reloading) doesn't repeat the sheet.
+    private var shownConfigErrors: [ConfigSource: [String]] = [:]
+
+    /// Both configs skip bad lines and apply the rest; this says which
+    /// lines were skipped.
+    func showConfigErrors(_ errors: [String], of source: ConfigSource) {
         guard !errors.isEmpty else {
-            shownConfigErrors = []
+            shownConfigErrors[source] = nil
             return
         }
-        guard errors != shownConfigErrors, let window, window.isVisible, window.attachedSheet == nil else { return }
-        shownConfigErrors = errors
+        guard errors != shownConfigErrors[source], let window, window.isVisible, window.attachedSheet == nil else { return }
+        shownConfigErrors[source] = errors
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "The Ghostty config has errors"
+        alert.messageText = "The \(source.rawValue) config has errors"
         alert.informativeText = errors.prefix(10).joined(separator: "\n")
             + (errors.count > 10 ? "\n…" : "")
             + "\n\nThose lines were skipped; the rest of the config is in effect."

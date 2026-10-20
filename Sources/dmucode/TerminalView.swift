@@ -196,12 +196,14 @@ final class TerminalView: NSView, NSTextInputClient {
     }
 
     /// Control combinations (C-/, C-Return, C-Tab...) can be eaten by AppKit
-    /// as key equivalents before keyDown; route them to the terminal. Command
-    /// shortcuts are left to the menu, and unhandled ones still reach keyDown.
+    /// as key equivalents before keyDown; route them to the terminal, unless
+    /// the config made one a menu shortcut. Command shortcuts are left to
+    /// the menu, and unhandled ones still reach keyDown.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown, window?.firstResponder === self else { return false }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if flags.contains(.control) && !flags.contains(.command) {
+            if NSApp.mainMenu?.performKeyEquivalent(with: event) == true { return true }
             keyDown(with: event)
             return true
         }
