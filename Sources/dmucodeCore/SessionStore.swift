@@ -58,6 +58,9 @@ public final class SessionStore: ObservableObject {
     /// What the app may ask of tmux (see `perform`).
     public var tmux: any TmuxCommands { backend }
     private let backend: any TmuxBackend
+    /// Session templates (sesh), if a source is installed.
+    private let templates: (any SessionTemplates)?
+    public var hasTemplates: Bool { templates != nil }
     private let makeControl: (_ sessionID: String) throws -> any TmuxControlConnection
     private let scheduler: StoreScheduler
     private let defaults: UserDefaults
@@ -94,18 +97,21 @@ public final class SessionStore: ObservableObject {
         "%subscription-changed",
     ]
 
-    public convenience init(tmux: Tmux) {
+    public convenience init(tmux: Tmux, templates: (any SessionTemplates)? = nil) {
         self.init(backend: tmux,
+                  templates: templates,
                   makeControl: { try TmuxControlClient(tmux: tmux, sessionID: $0) },
                   scheduler: DispatchScheduler(),
                   defaults: .standard)
     }
 
     init(backend: any TmuxBackend,
+         templates: (any SessionTemplates)? = nil,
          makeControl: @escaping (_ sessionID: String) throws -> any TmuxControlConnection,
          scheduler: StoreScheduler,
          defaults: UserDefaults) {
         self.backend = backend
+        self.templates = templates
         self.makeControl = makeControl
         self.scheduler = scheduler
         self.defaults = defaults
@@ -319,6 +325,45 @@ public final class SessionStore: ObservableObject {
 
     public func selectPane(_ paneID: String) {
         performBackend { tmux in try tmux.selectPane(id: paneID) }
+    }
+
+    // MARK: Session templates
+
+    /// The templates, fetched when the palette opens; none without a source
+    /// or when listing fails.
+    public func listTemplates(_ done: @escaping ([SessionTemplate]) -> Void) {
+        guard let templates else { done([]); return }
+        scheduler.background {
+            let list = (try? templates.list()) ?? []
+            self.scheduler.main { done(list) }
+        }
+    }
+
+    /// Starts the template's session and selects it. The shown session's
+    /// active pane goes along so that the template source may switch our
+    /// terminal to the new session, as sesh does inside tmux. The source
+    /// may report a failure after creating the session (there is no client
+    /// to switch when nothing is shown), so the outcome is whether a session
+    /// of that name exists afterwards.
+    public func startTemplate(_ template: SessionTemplate) {
+        guard let templates else { return }
+        let tmux = backend
+        let selected = selectedID
+        scheduler.background {
+            let pane = selected.flatMap { try? tmux.activePane(sessionID: $0) }
+            let error: Error?
+            do { try templates.start(template.name, pane: pane); error = nil } catch let e { error = e }
+            self.scheduler.main {
+                self.refresh {
+                    if let session = self.sessions.first(where: { $0.name == template.name }) {
+                        self.commandError = nil
+                        self.selectedID = session.id
+                    } else {
+                        self.commandError = error.map { "\($0)" } ?? "sesh did not create a session named \(template.name)"
+                    }
+                }
+            }
+        }
     }
 
     public func listCommands(_ done: @escaping ([TmuxCommand]) -> Void) {

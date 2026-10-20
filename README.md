@@ -18,6 +18,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 - **Attention markers.** A session whose terminal rings the bell or sends a desktop notification (OSC 9/777) gets an orange bell and the notification's text, for example when Claude Code is waiting for input. The Dock icon shows how many sessions want attention.
 - **⌘K palette.**
   - Fuzzy-find any session, window or pane. Panes are found by their title too, where Claude Code writes the topic of its conversation.
+  - With [sesh](https://github.com/joshmedeski/sesh) installed, its configured sessions that aren't running are found too, and Return starts one: sesh creates the session in its directory and runs its startup command.
   - Start the line with `:` to run a tmux command.
 - **Your order, remembered.**
   - Drag sessions into any order and into groups.
@@ -115,6 +116,8 @@ open /Applications/dmucode.app
 - pane titles and programs. Programs such as Claude Code or nvim write their title into the pane; titles that are just the host name or a directory are skipped, and so are plain shells.
 
 Return switches to the match: the session, and the window and pane when one of those matched. With an empty query, the sessions are listed by when you last used them, so ⌘K then Return toggles between the last two.
+
+With sesh installed, the sessions in its config that aren't running are matched by name and directory too, marked with **+** and "sesh", and listed after the sessions (a few of them with an empty query). Return starts the session; see [sesh](#sesh).
 
 **Command mode (`:` or ⌘:)** turns the palette into tmux's command prompt. Type `:` as the first character, or open it directly with **⌘:**.
 
@@ -215,6 +218,19 @@ tpm doesn't install plugins by itself: press `prefix I`, or run `~/.config/tmux/
   }
   ```
 
+### sesh
+
+[sesh](https://github.com/joshmedeski/sesh) keeps session templates in `~/.config/sesh/sesh.toml`: a name, a directory, and a startup command. If sesh is installed, the ⌘K palette offers the templates whose session isn't running, and Return starts one through `sesh connect`. sesh creates the session in the template's directory, types the startup command, and switches dmucode's terminal to it.
+
+```toml
+[[session]]
+name = "Projects/dmucode"
+path = "~/Claude/Code/dmucode"
+startup_command = "claude"
+```
+
+Since the session is named `Projects/dmucode`, it files itself under the group **Projects** in the sidebar. sesh is run with the app's tmux server (`TMUX` names its socket, so a `DMUCODE_TMUX_SOCKET` server works too) and with the same `PATH` as tmux. dmucode looks for `sesh` in the same places as tmux, except that it doesn't ask the login shell; set `DMUCODE_SESH` if it lives elsewhere. Nothing changes when sesh isn't installed.
+
 ### Claude Code notifications
 
 To get the attention marker with Claude Code's message in every session and window, add this to `~/.claude/settings.json` on each machine:
@@ -231,6 +247,7 @@ Claude Code then sends its message (OSC 9) and a bell. By default (`auto`) it se
 |---|---|
 | `DMUCODE_TMUX_SOCKET=name` | Use a separate tmux server (`tmux -L name`), e.g. to try things without touching your sessions. |
 | `DMUCODE_TMUX=/path/to/tmux` | Use this tmux instead of searching for one (see [Requirements](#requirements)). |
+| `DMUCODE_SESH=/path/to/sesh` | Use this sesh for session templates (see [sesh](#sesh)). |
 | `DMUCODE_RESURRECT_DIR=dir` | Look for the tmux-resurrect save here (for tests). |
 | `DMUCODE_DEBUG_DIR=dir` | Enable the debug hook (see [Development](#development)). |
 

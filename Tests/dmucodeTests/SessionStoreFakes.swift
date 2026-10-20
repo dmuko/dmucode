@@ -45,6 +45,32 @@ final class FakeTmux: TmuxBackend {
     func attachCommand(sessionID: String) -> String { "attach \(sessionID)" }
 }
 
+/// Session templates in memory. Starting one adds a session to the fake
+/// tmux, unless `startFails` is set, in which case it may still add the
+/// session (`createsDespiteFailure`): sesh does that when there is no
+/// client to switch.
+final class FakeTemplates: SessionTemplates {
+    var templates: [SessionTemplate] = []
+    var startFails: SeshError?
+    var createsDespiteFailure = false
+    private let tmux: FakeTmux
+    private(set) var started: [(name: String, pane: String?)] = []
+
+    init(tmux: FakeTmux) {
+        self.tmux = tmux
+    }
+
+    func list() throws -> [SessionTemplate] { templates }
+
+    func start(_ name: String, pane: String?) throws {
+        started.append((name, pane))
+        if startFails == nil || createsDespiteFailure {
+            tmux.sessions.append(session(name))
+        }
+        if let startFails { throw startFails }
+    }
+}
+
 /// A control connection whose replies come from the fake tmux, or are held
 /// until the test releases them.
 final class FakeControl: TmuxControlConnection {
@@ -145,6 +171,9 @@ final class ManualScheduler: StoreScheduler {
 /// A SessionStore on the fakes, with user defaults of its own.
 final class StoreHarness {
     let tmux = FakeTmux()
+    lazy var templates = FakeTemplates(tmux: tmux)
+    /// Set before `makeStore` to give the store a template source.
+    var withTemplates = false
     let scheduler = ManualScheduler()
     let defaults: UserDefaults
     private let suite = "dmucode-tests-" + UUID().uuidString
@@ -166,6 +195,7 @@ final class StoreHarness {
     func makeStore() -> SessionStore {
         store = SessionStore(
             backend: tmux,
+            templates: withTemplates ? templates : nil,
             makeControl: { [unowned self] id in
                 if let controlFailure { throw controlFailure }
                 let control = FakeControl(sessionID: id, tmux: tmux, scheduler: scheduler)
