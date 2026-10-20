@@ -21,7 +21,21 @@ if [ -z "$zig" ]; then
     fi
   done
 fi
-echo "Using $zig ($("$zig" version))"
+if [ -z "$zig" ]; then
+  echo "error: zig not found. Install Zig 0.16.x with 'brew install zig@0.16', or set ZIG=/path/to/zig." >&2
+  exit 1
+fi
+zig_version="$("$zig" version)"
+echo "Using $zig ($zig_version)"
+
+case "$zig_version" in
+  0.16*) ;;
+  *)
+    echo "error: $zig is Zig $zig_version, but Ghostty needs Zig 0.16.x." >&2
+    echo "Install it with 'brew install zig@0.16', or set ZIG=/path/to/zig." >&2
+    exit 1
+    ;;
+esac
 
 cd vendor/ghostty
 "$zig" build \
