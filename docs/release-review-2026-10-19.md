@@ -6,13 +6,13 @@ A review of the codebase before publishing it as open source, from two angles: i
 
 ## Before publishing
 
-- [ ] **Error messages vanish at once.** `SessionStore.perform` sets `errorMessage` and then calls `refresh`, whose successful `apply` clears the message a few milliseconds later ([SessionStore.swift:160](../Sources/dmucode/SessionStore.swift#L160), [:380](../Sources/dmucode/SessionStore.swift#L380)). Renaming a session to an existing name shows nothing. The control-mode connection error at [:290](../Sources/dmucode/SessionStore.swift#L290) is cleared the same way by the next poll. Keep command errors apart from listing errors, or clear the message only on the user's next action.
-- [ ] **Remove the pre-release migration.** `DefaultsMigration` copies settings from the bundle id `dev.dmucode.app`, which nobody else ever had. Its tests also write into the real `~/Library/Preferences`. Delete `Sources/dmucode/DefaultsMigration.swift`, `Tests/dmucodeTests/DefaultsMigrationTests.swift`, the call in `main.swift`, and the row in `docs/ARCHITECTURE.md`.
-- [ ] **Personal host name in tests** ([TmuxParseTests.swift:63](../Tests/dmucodeTests/TmuxParseTests.swift#L63), [:87](../Tests/dmucodeTests/TmuxParseTests.swift#L87)). Replace with a neutral one.
-- [ ] **Ghostty's license is missing from the app bundle.** `scripts/build-app.sh` copies Ghostty's terminfo, themes and shell integration into the app but not `vendor/ghostty/LICENSE`. MIT requires the notice to travel with the code.
-- [ ] **Wording.** The comments at [GhosttyRuntime.swift:199](../Sources/dmucode/GhosttyRuntime.swift#L199) and [:266](../Sources/dmucode/GhosttyRuntime.swift#L266) talk about "the prototype". Say "not handled yet" or similar.
-- [ ] Add `applicationSupportsSecureRestorableState` to the app delegate (macOS 14 logs a warning without it).
-- [ ] Add `.swiftpm/` and `.DS_Store` to `.gitignore`.
+- [x] **Error messages vanish at once.** `SessionStore.perform` sets `errorMessage` and then calls `refresh`, whose successful `apply` clears the message a few milliseconds later ([SessionStore.swift:160](../Sources/dmucode/SessionStore.swift#L160), [:380](../Sources/dmucode/SessionStore.swift#L380)). Renaming a session to an existing name shows nothing. The control-mode connection error at [:290](../Sources/dmucode/SessionStore.swift#L290) is cleared the same way by the next poll. Keep command errors apart from listing errors, or clear the message only on the user's next action.
+- [x] **Remove the pre-release migration.** `DefaultsMigration` copies settings from the bundle id `dev.dmucode.app`, which nobody else ever had. Its tests also write into the real `~/Library/Preferences`. Delete `Sources/dmucode/DefaultsMigration.swift`, `Tests/dmucodeTests/DefaultsMigrationTests.swift`, the call in `main.swift`, and the row in `docs/ARCHITECTURE.md`.
+- [x] **Personal host name in tests** ([TmuxParseTests.swift:63](../Tests/dmucodeTests/TmuxParseTests.swift#L63), [:87](../Tests/dmucodeTests/TmuxParseTests.swift#L87)). Replace with a neutral one.
+- [x] **Ghostty's license is missing from the app bundle.** `scripts/build-app.sh` copies Ghostty's terminfo, themes and shell integration into the app but not `vendor/ghostty/LICENSE`. MIT requires the notice to travel with the code.
+- [x] **Wording.** The comments at [GhosttyRuntime.swift:199](../Sources/dmucode/GhosttyRuntime.swift#L199) and [:266](../Sources/dmucode/GhosttyRuntime.swift#L266) talk about "the prototype". Say "not handled yet" or similar.
+- [x] Add `applicationSupportsSecureRestorableState` to the app delegate (macOS 14 logs a warning without it).
+- [x] Add `.swiftpm/` and `.DS_Store` to `.gitignore`.
 - [ ] Tag `v0.1.0` when publishing.
 
 ## Structural, for sustainability
