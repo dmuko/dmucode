@@ -9,15 +9,21 @@ import PackageDescription
 let ghosttyKit = "vendor/ghostty/macos/GhosttyKit.xcframework"
 let hasGhosttyKit = FileManager.default.fileExists(atPath: Context.packageDirectory + "/" + ghosttyKit)
 
+// Complete concurrency checking, reported as warnings: the language mode
+// stays 5 while the deliberate cross-thread code (libghostty callbacks, the
+// control client's queues) is annotated. See ARCHITECTURE.md, Concurrency.
+let concurrency: [SwiftSetting] = [.enableUpcomingFeature("StrictConcurrency")]
+
 var targets: [Target] = [
     // The GhosttyKit-free part: the tmux wrapper and parsers, the session
     // store, the sidebar layout, fuzzy matching, `git status`.
-    .target(name: "dmucodeCore"),
+    .target(name: "dmucodeCore", swiftSettings: concurrency),
     // `swift test`: the parsers and the sidebar layout, through
     // @testable import of dmucodeCore. Needs no GhosttyKit.
     .testTarget(
         name: "dmucodeTests",
-        dependencies: ["dmucodeCore"]
+        dependencies: ["dmucodeCore"],
+        swiftSettings: concurrency
     ),
 ]
 
@@ -27,6 +33,7 @@ if hasGhosttyKit {
         .executableTarget(
             name: "dmucode",
             dependencies: ["dmucodeCore", "GhosttyKit"],
+            swiftSettings: concurrency,
             linkerSettings: [
                 .linkedLibrary("c++"),
                 .linkedFramework("AppKit"),

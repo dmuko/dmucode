@@ -152,6 +152,34 @@ A marker has two sources.
   4. Run the app: terminals render, typing, mouse and IME work, copy and paste (including the paste confirmation), the bell and desktop notifications show attention markers, and a detached tmux client closes its view.
 - **Goal:** move to a release tag as soon as one has the API above and builds with the Zig version we use. Until then, the build script refuses a Zig that isn't 0.16.x, so a mismatch fails early with a clear message instead of deep inside the Ghostty build.
 
+## Concurrency
+
+The package uses Swift 6 tooling in language mode 5, with complete concurrency checking (`StrictConcurrency`) reported as warnings, so the places where code crosses threads stay visible.
+
+- **Threads:** UI and model state live on the main thread. The rest is serial queues, each with one job:
+  - `dmucode.tmux`: tmux CLI commands from `SessionStore`.
+  - The control client's reader (stdout), its write queue (`dmucode.tmux-control.write`) and its heartbeat timer.
+  - `dmucode.git`: `git status` runs.
+  - libghostty calls its runtime callbacks (wakeup, actions, clipboard) on its own threads. `GhosttyRuntime` and `TerminalView` hop to the main thread before touching AppKit.
+  
+  Results come back to the main thread with `DispatchQueue.main.async`, not with actors.
+- **Warnings at the time of writing:** 111, from a clean `swift build --build-tests`:
+
+  | Where | Warnings | Mostly |
+  |---|---|---|
+  | `dmucode` (the app) | 87 | AppKit types (`TerminalView`'s `NSTextInputClient` conformance, `DebugHooks`, the app delegate) used from nonisolated code: 51 in `DebugHooks`, 18 in `GhosttyRuntime`, 14 in `main.swift` |
+  | `dmucodeCore` | 21 | Closures handed to `DispatchQueue` that aren't `@Sendable` (`TmuxControlClient`, `GitStatus`, `TmuxBackend`'s scheduler, `ControlCommandPipeline`) |
+  | `dmucodeTests` | 3 | Blocking `wait()` inside async tests |
+
+  By category: 64 main actor isolation, 42 Sendable, 1 global mutable state (`DebugHooks`' timer), plus the test waits.
+- **Toward language mode 6:**
+  - Mark the AppKit and SwiftUI side `@MainActor`: the window controller, views, `GhosttyRuntime` and the debug hook. Make protocol conformances such as `NSTextInputClient` explicitly isolated or `@preconcurrency`.
+  - Make the work closures in `StoreScheduler`, the control client and `GitStatusStore` `@Sendable`, along with the values they capture.
+  - Make `SessionStore` and `GitStatusStore` `@MainActor`, which they already are by convention.
+  - Replace the semaphore waits in the tests with `async` waiting.
+  
+  Each warning fixed in mode 5 is one fewer error when switching.
+
 ## Testing
 
 - **Unit tests** (`swift test`, Swift Testing) import `dmucodeCore` with `@testable import`, so they run on a fresh clone without building GhosttyKit. They cover:

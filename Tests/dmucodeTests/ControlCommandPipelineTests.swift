@@ -59,7 +59,7 @@ struct ControlCommandPipelineTests {
         #expect(await eventually { recorder.lines.count == count })
 
         // The n-th reply tmux sends belongs to the n-th line written.
-        for line in recorder.lines {
+        for _ in recorder.lines {
             pipeline.popReply()?(.success([]))
         }
         #expect(recorder.popped == recorder.lines.map { String($0.dropLast()) })
