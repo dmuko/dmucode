@@ -139,7 +139,7 @@ enum DebugHooks {
                 if let newID { store.selectedID = newID }
             })
         default:
-            NSLog("debug: unknown command %@", line)
+            Log.debug.error("unknown command \(line, privacy: .public)")
         }
     }
 
@@ -180,7 +180,7 @@ enum DebugHooks {
             "backspace": (51, "\u{7f}", []),
         ]
         guard let key = keys[name] else {
-            NSLog("debug: unknown key %@", name)
+            Log.debug.error("unknown key \(name, privacy: .public)")
             return
         }
         for type in [NSEvent.EventType.keyDown, .keyUp] {
@@ -215,7 +215,7 @@ enum DebugHooks {
         guard let item = menuItems(NSApp.mainMenu).first(where: {
             $0.keyEquivalent == key && $0.keyEquivalentModifierMask == flags
         }), let action = item.action else {
-            NSLog("debug: no menu item for %@", spec)
+            Log.debug.error("no menu item for \(spec, privacy: .public)")
             return
         }
         // Like AppKit: the first responder in the chain that implements the
@@ -223,11 +223,11 @@ enum DebugHooks {
         var target = window.firstResponder
         while let responder = target, !responder.responds(to: action) { target = responder.nextResponder }
         guard let target else {
-            NSLog("debug: nothing handles %@", spec)
+            Log.debug.error("nothing handles \(spec, privacy: .public)")
             return
         }
         if let validator = target as? NSMenuItemValidation, !validator.validateMenuItem(item) {
-            NSLog("debug: %@ is disabled (target %@)", spec, String(describing: type(of: target)))
+            Log.debug.error("\(spec, privacy: .public) is disabled (target \(String(describing: type(of: target)), privacy: .public))")
             return
         }
         target.perform(action, with: item)

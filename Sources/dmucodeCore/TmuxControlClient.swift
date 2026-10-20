@@ -14,7 +14,7 @@ final class TmuxControlClient {
     /// reply came (see `checkHeartbeat`). Main thread.
     var onExit: (() -> Void)?
 
-    static let log = Logger(subsystem: "com.dmuko.dmucode", category: "control")
+    static let log = Log.control
 
     /// A stalled connection never closes, so exit and EOF can't reveal it; a
     /// command without a reply can. Every interval, give up if the oldest
