@@ -547,3 +547,69 @@ struct SessionStoreLayoutTests {
         #expect(h.store.sidebarRows.count == 3)
     }
 }
+
+struct SessionStoreTemplateTests {
+    @Test func startingATemplateSelectsTheNewSessionByName() {
+        let h = StoreHarness()
+        h.withTemplates = true
+        h.tmux.sessions = [session("a")]
+        h.start()
+        h.templates.templates = [SessionTemplate(name: "Projects/x", path: "/x")]
+
+        h.store.startTemplate(h.templates.templates[0])
+        h.scheduler.run()
+        #expect(h.templates.started.map(\.name) == ["Projects/x"])
+        // The shown session's active pane, so sesh may switch our terminal.
+        #expect(h.templates.started.first?.pane == "%0")
+        #expect(h.store.selectedID == "$Projects/x")
+        #expect(h.store.commandError == nil)
+    }
+
+    @Test func aFailedSwitchStillCountsWhenTheSessionExists() {
+        let h = StoreHarness()
+        h.withTemplates = true
+        h.start()
+        h.templates.startFails = SeshError(description: "Failed to switch to tmux session")
+        h.templates.createsDespiteFailure = true
+
+        h.store.startTemplate(SessionTemplate(name: "x", path: "/x"))
+        h.scheduler.run()
+        // No session was shown, so no pane was passed.
+        #expect(h.templates.started.first?.pane == nil)
+        #expect(h.store.selectedID == "$x")
+        #expect(h.store.commandError == nil)
+    }
+
+    @Test func aFailureWithoutASessionIsShown() {
+        let h = StoreHarness()
+        h.withTemplates = true
+        h.tmux.sessions = [session("a")]
+        h.start()
+        h.templates.startFails = SeshError(description: "no such template")
+
+        h.store.startTemplate(SessionTemplate(name: "x", path: "/x"))
+        h.scheduler.run()
+        #expect(h.store.selectedID == "$a")
+        #expect(h.store.commandError == "no such template")
+    }
+
+    @Test func withoutASourceThereAreNoTemplates() {
+        let h = StoreHarness()
+        h.start()
+        #expect(!h.store.hasTemplates)
+        nonisolated(unsafe) var listed: [SessionTemplate]?
+        h.store.listTemplates { listed = $0 }
+        #expect(listed == [])
+    }
+
+    @Test func templatesAreListedFromTheSource() {
+        let h = StoreHarness()
+        h.withTemplates = true
+        h.start()
+        h.templates.templates = [SessionTemplate(name: "x", path: "/x")]
+        nonisolated(unsafe) var listed: [SessionTemplate]?
+        h.store.listTemplates { listed = $0 }
+        h.scheduler.run()
+        #expect(listed == h.templates.templates)
+    }
+}

@@ -81,12 +81,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         commandBar.onDone = { [weak self] in self?.palette.close() }
         palette.onClose = { [weak self] in self?.terminals.setOverlayVisible(false) }
-        switcher.onChoose = { [weak self] session, window, pane in
+        switcher.onChoose = { [weak self] item in
             guard let self else { return }
             self.palette.close()
-            self.store.selectedID = session.id
-            if let window, !window.isActive { self.selectWindow(window) }
-            if let pane, !pane.isActive { self.store.selectPane(pane.id) }
+            switch item.target {
+            case .session(let session, let window, let pane):
+                self.store.selectedID = session.id
+                if let window, !window.isActive { self.selectWindow(window) }
+                if let pane, !pane.isActive { self.store.selectPane(pane.id) }
+            case .template(let template):
+                self.store.startTemplate(template)
+            }
         }
         terminals.onAlert = { [weak self] sessionID, message in
             guard let self else { return }
@@ -381,7 +386,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc func toggleSwitcher(_ sender: Any?) {
-        guard !store.sessions.isEmpty else { NSSound.beep(); return }
+        guard !store.sessions.isEmpty || store.hasTemplates else { NSSound.beep(); return }
         togglePalette(.sessions)
     }
 
@@ -395,6 +400,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             store.listCommands { [weak self] in self?.commandBar.commands = $0 }
         }
         store.listPanes { [weak self] in self?.switcher.panes = $0 }
+        if store.hasTemplates {
+            store.listTemplates { [weak self] in self?.switcher.templates = $0 }
+        }
         palette.open(mode)
         terminals.setOverlayVisible(true)
     }

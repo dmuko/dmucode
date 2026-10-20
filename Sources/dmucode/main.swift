@@ -39,7 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let store = SessionStore(tmux: tmux)
+        // sesh's session templates in the palette, if sesh is installed.
+        let store = SessionStore(tmux: tmux, templates: Sesh.resolve(tmux: tmux))
         let controller = MainWindowController(store: store)
         windowController = controller
         controller.showWindow(nil)

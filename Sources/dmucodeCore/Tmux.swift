@@ -343,37 +343,22 @@ public struct Tmux {
     private func run(
         _ args: [String], input: String? = nil, environment: [String: String]? = nil
     ) throws -> (status: Int32, stdout: String, stderr: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = globalArgs + args
+        let output = try Subprocess.run(
+            executable: executable, arguments: globalArgs + args, input: input,
+            environment: environment ?? self.environment)
+        return (output.status, output.stdout, output.stderr)
+    }
 
-        process.environment = environment ?? self.environment
+    /// The path of the server's socket, as tmux computes it from `-L`:
+    /// `$TMUX_TMPDIR` (or /tmp) + `tmux-<uid>/<socket name>`. Used to point
+    /// other tools (sesh) at the same server through the TMUX variable.
+    public var socketPath: String {
+        Self.socketPath(socketName: socketName, environment: ProcessInfo.processInfo.environment, uid: getuid())
+    }
 
-        let out = Pipe(), err = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        let stdin = input.map { _ in Pipe() }
-        process.standardInput = stdin ?? FileHandle.nullDevice
-        try process.run()
-        if let stdin, let input {
-            try? stdin.fileHandleForWriting.write(contentsOf: Data(input.utf8))
-            try? stdin.fileHandleForWriting.close()
-        }
-        // Both pipes at once: reading one to the end first would deadlock
-        // once the other fills its buffer (64 KB) and the process blocks.
-        // A thread of its own, not a dispatch queue: a blocking read must not
-        // depend on a free worker thread (CI runners have few).
-        var stderr = Data()
-        let stderrRead = DispatchSemaphore(value: 0)
-        Thread {
-            stderr = err.fileHandleForReading.readDataToEndOfFile()
-            stderrRead.signal()
-        }.start()
-        let stdout = out.fileHandleForReading.readDataToEndOfFile()
-        stderrRead.wait()
-        process.waitUntilExit()
-        return (process.terminationStatus,
-                String(decoding: stdout, as: UTF8.self),
-                String(decoding: stderr, as: UTF8.self))
+    static func socketPath(socketName: String?, environment: [String: String], uid: uid_t) -> String {
+        var base = environment["TMUX_TMPDIR"].flatMap { $0.isEmpty ? nil : $0 } ?? "/tmp"
+        while base.count > 1, base.hasSuffix("/") { base.removeLast() }
+        return base + "/tmux-\(uid)/" + (socketName ?? "default")
     }
 }
