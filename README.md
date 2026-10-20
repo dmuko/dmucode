@@ -257,7 +257,7 @@ swift build             # debug build (the app bundle comes from scripts/build-a
 swift test              # unit tests (Swift Testing)
 ```
 
-- **Tests:** the unit tests cover the parsers (tmux control mode, tmux list output, `git status`), the palette's fuzzy matching, the sidebar layout and the settings migration. They import the app target with `@testable import dmucode`, so they need GhosttyKit like the build does.
+- **Tests:** the unit tests cover the parsers (tmux control mode, tmux list output, `git status`), the palette's fuzzy matching, and the sidebar layout. They import the app target with `@testable import dmucode`, so they need GhosttyKit like the build does.
 - **Trying changes safely:** run a second instance against its own tmux server, so your real sessions aren't touched:
 
   ```bash

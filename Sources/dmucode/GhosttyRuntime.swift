@@ -196,7 +196,7 @@ final class GhosttyRuntime: ObservableObject {
             return true
         default:
             // Everything else (Ghostty tabs, splits, windows, title...) is
-            // either tmux's job here or not needed for the prototype.
+            // either tmux's job here or not handled yet.
             return false
         }
     }
@@ -262,8 +262,8 @@ final class GhosttyRuntime: ObservableObject {
         len: Int,
         confirm: Bool
     ) {
-        // Writes that need confirmation come from programs (OSC 52); the
-        // prototype just ignores them.
+        // Writes that need confirmation come from programs (OSC 52); they
+        // aren't handled yet and are ignored.
         guard location == GHOSTTY_CLIPBOARD_STANDARD, !confirm,
               let text = plainText(content, count: len) else { return }
         DispatchQueue.main.async {
