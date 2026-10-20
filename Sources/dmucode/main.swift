@@ -5,6 +5,11 @@ import dmucodeCore
 unsetenv("TMUX")
 unsetenv("TMUX_PANE")
 
+// Writing to a tmux process that has exited (e.g. the control client's
+// stdin) would otherwise raise SIGPIPE and kill the app; ignored, the write
+// fails with EPIPE, which the callers handle.
+signal(SIGPIPE, SIG_IGN)
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
 
