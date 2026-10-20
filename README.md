@@ -257,6 +257,7 @@ Claude Code then sends its message (OSC 9) and a bell. By default (`auto`) it se
 - **Fixed tmux-resurrect directory:** a custom `@resurrect-dir` isn't supported for restoring at launch, because it can't be read before the server runs.
 - **Tab order:** `swap-window` sends no control-mode notification, so the tab order updates only after the next event.
 - **Missing features:** tabs can't be dragged, there is no settings window, and modifier-only key events (`flagsChanged`) and mouse pointer shapes aren't passed to the terminal yet.
+- **Opened sessions stay attached:** a session you have opened keeps its terminal (a Metal surface and a `tmux attach` process) until it ends or dmucode quits, so switching back is instant. With dozens of opened sessions this adds up. There's deliberately no cap: the hidden terminal is what receives a session's notifications (OSC 9/777, e.g. Claude Code's text), so closing it would drop those for exactly the sessions you aren't looking at. Bells still reach the sidebar through tmux.
 - **Shared tmux state:** dmucode's control client counts as an attached client in tmux (`tmux ls` shows a session as attached), and your `client-attached` hooks run for it.
 
 ## Development
