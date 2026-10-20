@@ -30,7 +30,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 ## Requirements
 
 - An Apple silicon Mac with macOS 14 or later.
-- [tmux](https://github.com/tmux/tmux) 3.2 or later. 3.6 or later is recommended, and dmucode is developed with 3.8. dmucode looks for `tmux` (and `git`, for the tabs' git status) in `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` (MacPorts), the Nix profiles (`~/.nix-profile/bin`, `/etc/profiles/per-user/$USER/bin`, `/run/current-system/sw/bin`, `/nix/var/nix/profiles/default/bin`) and `/usr/bin`, then in the `PATH` it was started with. If it finds no tmux there, it asks your login shell (`$SHELL -l -c 'command -v tmux'`). Set `DMUCODE_TMUX` to use another one.
+- [tmux](https://github.com/tmux/tmux) 3.2 or later, which has the control-mode features dmucode relies on (format subscriptions with `refresh-client -B`, client flags such as `no-output`). 3.6 or later is recommended. Only 3.8 is tested; nothing checks the versions in between. dmucode looks for `tmux` (and `git`, for the tabs' git status) in `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` (MacPorts), the Nix profiles (`~/.nix-profile/bin`, `/etc/profiles/per-user/$USER/bin`, `/run/current-system/sw/bin`, `/nix/var/nix/profiles/default/bin`) and `/usr/bin`, then in the `PATH` it was started with. If it finds no tmux there, it asks your login shell (`$SHELL -l -c 'command -v tmux'`). Set `DMUCODE_TMUX` to use another one.
 - To build from source: Xcode 16 or later (Swift 6), and [Zig](https://ziglang.org) **0.16.x** for libghostty. Ghostty needs this exact minor version, so Homebrew's current `zig` won't do; install `zig@0.16`.
 
 ## Installation
@@ -163,7 +163,7 @@ For Claude Code, see [Claude Code notifications](#claude-code-notifications).
 
 ### Ghostty
 
-dmucode reads the Ghostty config the way Ghostty does: `~/.config/ghostty/config` (or `config.ghostty`, or under `$XDG_CONFIG_HOME/ghostty`), then `~/Library/Application Support/com.mitchellh.ghostty/config`. Fonts, colors, `theme`, `background-opacity` and `background-blur` apply to the terminals. The sidebar, tab bar and title bar take the theme's background color, and the window's light or dark appearance follows it.
+dmucode reads the Ghostty config the way Ghostty does: `~/.config/ghostty/config` (or `config.ghostty`, or under `$XDG_CONFIG_HOME/ghostty`), then `~/Library/Application Support/com.mitchellh.ghostty/config`. Fonts, colors, `theme`, `background-opacity` and `background-blur` apply to the terminals. A bell makes a sound only as `bell-features` says: `system` plays the alert sound and `audio` plays `bell-audio-path`. Ghostty's default has neither, so add `bell-features = system,attention,title` to hear bells. The sidebar's attention marker shows either way. The sidebar, tab bar and title bar take the theme's background color, and the window's light or dark appearance follows it.
 
 The config reloads without restarting in three ways:
 
@@ -267,7 +267,7 @@ swift build             # debug build (the app bundle comes from scripts/build-a
 swift test              # unit tests (Swift Testing)
 ```
 
-- **Tests:** the unit tests cover the parsers (tmux control mode, tmux list output, `git status`), the palette's fuzzy matching, and the sidebar layout. They import the `dmucodeCore` library target with `@testable import dmucodeCore`, so `swift test` builds only `dmucodeCore` and works on a fresh clone without GhosttyKit. The app target needs GhosttyKit, so `swift build` and `scripts/build-app.sh` need it built first.
+- **Tests:** the unit tests cover the parsers (tmux control mode, tmux list output, `git status`), the palette's fuzzy matching, the sidebar layout and its storage, `SessionStore` against a fake tmux, finding executables, the git polling, and the control client's write path. One integration test drives the control client against a real tmux on its own socket, and is skipped when tmux isn't installed. They import the `dmucodeCore` library target with `@testable import dmucodeCore`, so `swift test` builds only `dmucodeCore` and works on a fresh clone without GhosttyKit. The app target needs GhosttyKit, so `swift build` and `scripts/build-app.sh` need it built first.
 - **CI:** [.github/workflows/ci.yml](.github/workflows/ci.yml) runs `swift test` on a macOS runner for every pull request and push to `main`. It checks out without the Ghostty submodule, so it covers `dmucodeCore` only; the app build isn't in CI.
 - **Trying changes safely:** run a second instance against its own tmux server, so your real sessions aren't touched:
 
@@ -279,6 +279,8 @@ swift test              # unit tests (Swift Testing)
   `-f /dev/null` keeps your tmux config out of the test server: with tmux-continuum's `@continuum-restore on`, it would restore your real sessions into it, programs included.
 
 - **Debug hook:** with `DMUCODE_DEBUG_DIR=dir`, the app runs commands written to `dir/cmd`. It can take snapshots of the window, type keys, run menu shortcuts, drive the palette and dump its state, all without Accessibility or Screen Recording permissions. The commands are listed in [DebugHooks.swift](Sources/dmucode/DebugHooks.swift).
+
+  The hook is compiled into release builds on purpose, because testing drives the built app. It does nothing unless `DMUCODE_DEBUG_DIR` is set in the app's environment, and whoever can set that can already run code as you, so it grants no new access. Don't point it at a directory other users can write to, since anything written to `cmd` becomes keystrokes in your terminals.
 - **Updating Ghostty:** move the `vendor/ghostty` submodule, run `build-ghosttykit.sh` and test, since `ghostty.h` may have changed.
 - **App icon:** [scripts/make-icon.swift](scripts/make-icon.swift) draws it. `swift scripts/make-icon.swift icns mocha Resources/AppIcon.icns` writes the icon, and `swift scripts/make-icon.swift preview build/icon-preview.png` writes a comparison of all palettes.
 
@@ -300,7 +302,7 @@ xcrun notarytool store-credentials dmucode --apple-id <apple id> --team-id <team
 - **Publishing:** tag the release commit (`git tag -a v<version>`), push the tag, and attach the DMG with `gh release create v<version> build/release/dmucode-<version>.dmg --verify-tag`. Then update `version` and `sha256` (`shasum -a 256` of the DMG) in `Casks/dmucode.rb` in [dmuko/homebrew-tap](https://github.com/dmuko/homebrew-tap), and check it with `brew audit --cask --online --strict dmuko/tap/dmucode`.
 - **Architecture:** Apple silicon only, as GhosttyKit is built for arm64. Users install tmux themselves.
 
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes how dmucode works: the source layout, the control-mode connection, attention markers, the palette's command mode, restoring at launch and the libghostty details.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the checklist for a pull request. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) describes how dmucode works: the source layout, the control-mode connection, attention markers, the palette's command mode, restoring at launch and the libghostty details.
 
 ## Acknowledgements
 
