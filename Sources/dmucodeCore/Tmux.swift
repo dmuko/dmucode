@@ -359,8 +359,18 @@ public struct Tmux {
             try? stdin.fileHandleForWriting.write(contentsOf: Data(input.utf8))
             try? stdin.fileHandleForWriting.close()
         }
+        // Both pipes at once: reading one to the end first would deadlock
+        // once the other fills its buffer (64 KB) and the process blocks.
+        // A thread of its own, not a dispatch queue: a blocking read must not
+        // depend on a free worker thread (CI runners have few).
+        var stderr = Data()
+        let stderrRead = DispatchSemaphore(value: 0)
+        Thread {
+            stderr = err.fileHandleForReading.readDataToEndOfFile()
+            stderrRead.signal()
+        }.start()
         let stdout = out.fileHandleForReading.readDataToEndOfFile()
-        let stderr = err.fileHandleForReading.readDataToEndOfFile()
+        stderrRead.wait()
         process.waitUntilExit()
         return (process.terminationStatus,
                 String(decoding: stdout, as: UTF8.self),

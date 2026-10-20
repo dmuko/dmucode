@@ -118,10 +118,12 @@ public struct ExecutableLookup {
         // killed one closes the pipe, which ends the read.
         let box = OutputBox()
         let read = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .utility).async {
+        // A thread of its own: the read blocks, and a dispatch queue might
+        // have no free worker for it (see Tmux.run).
+        Thread {
             box.data = out.fileHandleForReading.readDataToEndOfFile()
             read.signal()
-        }
+        }.start()
 
         let deadline = DispatchTime.now() + timeout
         guard exited.wait(timeout: deadline) == .success, read.wait(timeout: deadline) == .success else {

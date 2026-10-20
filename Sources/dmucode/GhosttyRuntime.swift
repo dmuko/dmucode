@@ -1,4 +1,5 @@
 import AppKit
+import dmucodeCore
 import GhosttyKit
 
 /// Owns the process-wide `ghostty_app_t` and answers libghostty's runtime
@@ -89,7 +90,7 @@ final class GhosttyRuntime: ObservableObject {
                 errors.append(String(cString: message))
             }
         }
-        for error in errors { NSLog("ghostty config: %@", error) }
+        for error in errors { Log.ghostty.error("config: \(error, privacy: .public)") }
         configErrors = errors
         return config
     }
@@ -125,6 +126,43 @@ final class GhosttyRuntime: ObservableObject {
             alpha: 1)
     }
 
+    /// `bell-features`: which of Ghostty's bell effects are on. dmucode
+    /// plays `system` (the alert sound) and `audio` (bell-audio-path); the
+    /// attention marker in the sidebar is shown regardless.
+    struct BellFeatures: OptionSet {
+        let rawValue: CUnsignedInt
+        static let system = BellFeatures(rawValue: 1 << 0)
+        static let audio = BellFeatures(rawValue: 1 << 1)
+        static let attention = BellFeatures(rawValue: 1 << 2)
+        static let title = BellFeatures(rawValue: 1 << 3)
+        static let border = BellFeatures(rawValue: 1 << 4)
+        /// Ghostty's default: no sound.
+        static let defaultValue = BellFeatures([.attention, .title])
+    }
+
+    var bellFeatures: BellFeatures {
+        guard let config else { return .defaultValue }
+        var value: CUnsignedInt = 0
+        let key = "bell-features"
+        guard ghostty_config_get(config, &value, key, UInt(key.utf8.count)) else { return .defaultValue }
+        return BellFeatures(rawValue: value)
+    }
+
+    private func playBell() {
+        let features = bellFeatures
+        if features.contains(.system) { NSSound.beep() }
+        guard features.contains(.audio), let config else { return }
+        var path = ghostty_config_path_s()
+        let pathKey = "bell-audio-path"
+        guard ghostty_config_get(config, &path, pathKey, UInt(pathKey.utf8.count)), let cPath = path.path else { return }
+        var volume: Double = 0.5
+        let volumeKey = "bell-audio-volume"
+        _ = ghostty_config_get(config, &volume, volumeKey, UInt(volumeKey.utf8.count))
+        guard let sound = NSSound(contentsOfFile: String(cString: cPath), byReference: false) else { return }
+        sound.volume = Float(volume)
+        sound.play()
+    }
+
     /// Applies `background-blur` behind a see-through window. libghostty
     /// does nothing when background-opacity is 1 or blur is off.
     func setBackgroundBlur(_ window: NSWindow) {
@@ -158,10 +196,12 @@ final class GhosttyRuntime: ObservableObject {
             return true
         case GHOSTTY_ACTION_RING_BELL:
             // tmux forwards a bell from any window of the session to its
-            // clients, so this also covers windows not on screen.
+            // clients, so this also covers windows not on screen. The
+            // attention marker is dmucode's own; the sound follows Ghostty's
+            // bell-features, as in Ghostty's app.
             let view = Self.view(target)
             DispatchQueue.main.async {
-                NSSound.beep()
+                self.playBell()
                 view?.onAlert?(nil)
             }
             return true
