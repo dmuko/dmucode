@@ -23,7 +23,7 @@ public final class SessionStore: ObservableObject {
             // is the session to come back to next time.
             selectionIsAutomatic = false
             if let name = sessions.first(where: { $0.id == selectedID })?.name {
-                UserDefaults.standard.set(name, forKey: lastSessionKey)
+                defaults.set(name, forKey: lastSessionKey)
             }
         }
     }
@@ -55,10 +55,14 @@ public final class SessionStore: ObservableObject {
     /// the client's tty and the new session id.
     public var onClientSessionChanged: ((_ tty: String, _ sessionID: String) -> Void)?
 
-    public let tmux: Tmux
-    private let queue = DispatchQueue(label: "dmucode.tmux")
-    private var control: TmuxControlClient?
-    private var pollTimer: Timer?
+    /// What the app may ask of tmux (see `perform`).
+    public var tmux: any TmuxCommands { backend }
+    private let backend: any TmuxBackend
+    private let makeControl: (_ sessionID: String) throws -> any TmuxControlConnection
+    private let scheduler: StoreScheduler
+    private let defaults: UserDefaults
+    private var control: (any TmuxControlConnection)?
+    private var stopPolling: (() -> Void)?
     private var cliRefreshing = false
     private var refreshScheduled = false
     /// The throwaway session that started the server for a restore. Hidden
@@ -73,10 +77,10 @@ public final class SessionStore: ObservableObject {
     /// Remembered by name: ids change when the tmux server restarts (e.g.
     /// after tmux-resurrect), names survive. Kept per tmux socket.
     private var lastSessionKey: String {
-        "lastSessionName" + (tmux.socketName.map { "-" + $0 } ?? "")
+        "lastSessionName" + (backend.socketName.map { "-" + $0 } ?? "")
     }
     private var layoutKey: String {
-        "sidebarLayout" + (tmux.socketName.map { "-" + $0 } ?? "")
+        "sidebarLayout" + (backend.socketName.map { "-" + $0 } ?? "")
     }
 
     /// Notifications after which the session list (names, windows, current
@@ -90,9 +94,22 @@ public final class SessionStore: ObservableObject {
         "%subscription-changed",
     ]
 
-    public init(tmux: Tmux) {
-        self.tmux = tmux
-        if let data = UserDefaults.standard.data(forKey: layoutKey),
+    public convenience init(tmux: Tmux) {
+        self.init(backend: tmux,
+                  makeControl: { try TmuxControlClient(tmux: tmux, sessionID: $0) },
+                  scheduler: DispatchScheduler(),
+                  defaults: .standard)
+    }
+
+    init(backend: any TmuxBackend,
+         makeControl: @escaping (_ sessionID: String) throws -> any TmuxControlConnection,
+         scheduler: StoreScheduler,
+         defaults: UserDefaults) {
+        self.backend = backend
+        self.makeControl = makeControl
+        self.scheduler = scheduler
+        self.defaults = defaults
+        if let data = defaults.data(forKey: layoutKey),
            let saved = try? JSONDecoder().decode(SidebarLayout.self, from: data) {
             layout = saved
         }
@@ -100,15 +117,15 @@ public final class SessionStore: ObservableObject {
 
     public func start() {
         startPolling()
-        let tmux = self.tmux
-        queue.async {
+        let tmux = backend
+        scheduler.background {
             // After a reboot there is no tmux server. If tmux-resurrect has a
             // save, start the server so tmux-continuum restores it.
             var placeholder: String?
             if tmux.hasResurrectSave, (try? tmux.isServerRunning()) == false {
                 placeholder = try? tmux.startServerForRestore()
             }
-            DispatchQueue.main.async {
+            self.scheduler.main {
                 if let placeholder { self.beginRestore(placeholder: placeholder) }
                 self.refresh()
             }
@@ -120,7 +137,7 @@ public final class SessionStore: ObservableObject {
         isRestoring = true
         // If nothing restores (continuum missing, another tmux server
         // running...), give up and show the session like any other.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+        scheduler.after(20) { [weak self] in
             guard let self, self.restorePlaceholderID == placeholder else { return }
             self.endRestore()
             self.refresh()
@@ -148,15 +165,15 @@ public final class SessionStore: ObservableObject {
         guard !cliRefreshing else {
             // Retry shortly so a completion is never dropped.
             if let completion {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.refresh(then: completion) }
+                scheduler.after(0.1) { self.refresh(then: completion) }
             }
             return
         }
         cliRefreshing = true
-        let tmux = self.tmux
-        queue.async {
+        let tmux = backend
+        scheduler.background {
             let result = Result { try tmux.listSessions() }
-            DispatchQueue.main.async {
+            self.scheduler.main {
                 self.cliRefreshing = false
                 self.apply(result)
                 self.connectIfPossible()
@@ -166,12 +183,17 @@ public final class SessionStore: ObservableObject {
     }
 
     /// Runs a tmux command off the main thread, then refreshes the list.
-    public func perform(_ work: @escaping (Tmux) throws -> Void, then completion: (() -> Void)? = nil) {
-        let tmux = self.tmux
-        queue.async {
+    public func perform(_ work: @escaping (any TmuxCommands) throws -> Void, then completion: (() -> Void)? = nil) {
+        performBackend({ try work($0) }, then: completion)
+    }
+
+    /// `perform` for the store's own commands, which use all of the backend.
+    private func performBackend(_ work: @escaping (any TmuxBackend) throws -> Void, then completion: (() -> Void)? = nil) {
+        let tmux = backend
+        scheduler.background {
             let error: Error?
             do { try work(tmux); error = nil } catch let e { error = e }
-            DispatchQueue.main.async {
+            self.scheduler.main {
                 self.commandError = error.map { "\($0)" }
                 self.refresh(then: completion)
             }
@@ -207,7 +229,7 @@ public final class SessionStore: ObservableObject {
                 sessions[s].windows[w].isActive = sessions[s].windows[w].id == windowID
             }
         }
-        perform { tmux in try tmux.selectWindow(sessionID: sessionID, windowID: windowID) }
+        performBackend { tmux in try tmux.selectWindow(sessionID: sessionID, windowID: windowID) }
     }
 
     // MARK: Sidebar order and groups
@@ -259,7 +281,7 @@ public final class SessionStore: ObservableObject {
     private func setLayout(_ layout: SidebarLayout) {
         self.layout = layout
         if let data = try? JSONEncoder().encode(layout) {
-            UserDefaults.standard.set(data, forKey: layoutKey)
+            defaults.set(data, forKey: layoutKey)
         }
     }
 
@@ -267,12 +289,12 @@ public final class SessionStore: ObservableObject {
 
     /// Runs a command-bar line as the session's active pane, then refreshes.
     public func runCommandLine(_ line: String, in sessionID: String, done: @escaping (Result<String, Error>) -> Void) {
-        let tmux = self.tmux
-        queue.async {
+        let tmux = backend
+        scheduler.background {
             let result = Result {
                 try tmux.runCommandLine(line, pane: try tmux.activePane(sessionID: sessionID))
             }
-            DispatchQueue.main.async {
+            self.scheduler.main {
                 done(result)
                 self.refresh()
             }
@@ -285,22 +307,22 @@ public final class SessionStore: ObservableObject {
             control.listPanes { done((try? $0.get()) ?? []) }
             return
         }
-        let tmux = self.tmux
-        queue.async {
+        let tmux = backend
+        scheduler.background {
             let panes = (try? tmux.listPanes()) ?? []
-            DispatchQueue.main.async { done(panes) }
+            self.scheduler.main { done(panes) }
         }
     }
 
     public func selectPane(_ paneID: String) {
-        perform { tmux in try tmux.selectPane(id: paneID) }
+        performBackend { tmux in try tmux.selectPane(id: paneID) }
     }
 
     public func listCommands(_ done: @escaping ([TmuxCommand]) -> Void) {
-        let tmux = self.tmux
-        queue.async {
+        let tmux = backend
+        scheduler.background {
             let commands = (try? tmux.listCommands()) ?? []
-            DispatchQueue.main.async { done(commands) }
+            self.scheduler.main { done(commands) }
         }
     }
 
@@ -309,9 +331,9 @@ public final class SessionStore: ObservableObject {
     /// Switches from polling to events once there is a session to attach to.
     private func connectIfPossible() {
         guard control == nil, let first = sessions.first else { return }
-        let client: TmuxControlClient
+        let client: any TmuxControlConnection
         do {
-            client = try TmuxControlClient(tmux: tmux, sessionID: first.id)
+            client = try makeControl(first.id)
         } catch {
             TmuxControlClient.log.error("tmux -C failed to start: \(String(describing: error), privacy: .public)")
             connectionError = "tmux control mode: \(error)"
@@ -330,7 +352,7 @@ public final class SessionStore: ObservableObject {
         control = client
         connectionError = nil
         isLive = true
-        stopPolling()
+        endPolling()
         // Pick up anything that changed between the CLI query and attaching.
         refresh()
     }
@@ -362,22 +384,22 @@ public final class SessionStore: ObservableObject {
     private func scheduleRefresh() {
         guard !refreshScheduled else { return }
         refreshScheduled = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+        scheduler.after(0.05) { [weak self] in
             self?.refreshScheduled = false
             self?.refresh()
         }
     }
 
     private func startPolling() {
-        guard pollTimer == nil else { return }
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        guard stopPolling == nil else { return }
+        stopPolling = scheduler.every(1.0) { [weak self] in
             self?.refresh()
         }
     }
 
-    private func stopPolling() {
-        pollTimer?.invalidate()
-        pollTimer = nil
+    private func endPolling() {
+        stopPolling?()
+        stopPolling = nil
     }
 
     // MARK: State
@@ -408,7 +430,7 @@ public final class SessionStore: ObservableObject {
     }
 
     private func fixSelection() {
-        let remembered = UserDefaults.standard.string(forKey: lastSessionKey)
+        let remembered = defaults.string(forKey: lastSessionKey)
         if selectionIsAutomatic, let match = sessions.first(where: { $0.name == remembered }) {
             if match.id != selectedID { selectAutomatically(match.id) }
             return

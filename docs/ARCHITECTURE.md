@@ -22,6 +22,7 @@ The package has two targets. `dmucodeCore` (library) holds everything that doesn
 | [main.swift](../Sources/dmucode/main.swift) | App delegate, menus, startup. |
 | [MainWindowController.swift](../Sources/dmucode/MainWindowController.swift) | The window: sidebar, tab bar, terminals, palette, theme and fullscreen handling. Also `TerminalContainerController`, which holds one terminal per opened session. |
 | [SessionStore.swift](../Sources/dmucodeCore/SessionStore.swift) | The sidebar's model: sessions, selection, attention markers, recent sessions, the sidebar layout. Owns the control-mode client and falls back to polling. |
+| [TmuxBackend.swift](../Sources/dmucodeCore/TmuxBackend.swift) | The protocols `SessionStore` is written against (see [Testing](#testing)), and the production scheduler. |
 | [TmuxControlClient.swift](../Sources/dmucodeCore/TmuxControlClient.swift) | The control-mode client: process, heartbeat, logging, and `ControlModeParser` for the protocol. |
 | [Tmux.swift](../Sources/dmucodeCore/Tmux.swift) | The tmux CLI wrapper, the list formats and their parsers; `TmuxSession`, `TmuxWindow`, `TmuxPane`. |
 | [SidebarView.swift](../Sources/dmucode/SidebarView.swift), [SidebarLayout.swift](../Sources/dmucodeCore/SidebarLayout.swift) | The sidebar, and its order and groups kept by session name. |
@@ -138,6 +139,8 @@ A marker has two sources.
 - **Unit tests** (`swift test`, Swift Testing) import `dmucodeCore` with `@testable import`, so they run on a fresh clone without building GhosttyKit. They cover:
   - `ControlModeParser`, the list and `git status` parsers, and the pane title filters
   - `FuzzyMatch` and `SidebarLayout`
+  - `SessionStore`: selection and the remembered session, the restore placeholder, alerts, the error sources, and the switch between polling and control mode
+- **A fake tmux for `SessionStore`:** the store depends on protocols, not on `Process`. `TmuxBackend` is the tmux CLI (the real `Tmux` conforms), `TmuxControlConnection` is the control-mode client (`TmuxControlClient`), and `StoreScheduler` is where its work runs and when (queues, delays and the polling timer). The public `TmuxCommands` is the part of `TmuxBackend` that the app's `SessionStore.perform` closures get. The app creates the store with `SessionStore(tmux:)`, which wires in the real ones; tests use the internal initializer with `FakeTmux`, `FakeControl` and a `ManualScheduler` (in `Tests/dmucodeTests/SessionStoreFakes.swift`) that runs background work at once and moves time only when the test says so, so nothing waits. Each test gets its own `UserDefaults` suite, which is removed afterwards.
 - **UI behavior** is checked with a test instance against its own tmux server (`DMUCODE_TMUX_SOCKET`), driven through the debug hook (`DMUCODE_DEBUG_DIR`). The hook's `state` command dumps:
   - the sidebar rows
   - the palette
