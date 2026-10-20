@@ -1,16 +1,16 @@
 import Foundation
 
 /// A working tree's state, shown on a tab: branch, changes, ahead/behind.
-struct GitStatus: Equatable {
+public struct GitStatus: Equatable {
     /// Branch name, or a short commit id when detached.
-    let branch: String
-    let changed: Int
-    let untracked: Int
-    let conflicted: Int
-    let ahead: Int
-    let behind: Int
+    public let branch: String
+    public let changed: Int
+    public let untracked: Int
+    public let conflicted: Int
+    public let ahead: Int
+    public let behind: Int
 
-    var isDirty: Bool { changed + untracked + conflicted > 0 }
+    public var isDirty: Bool { changed + untracked + conflicted > 0 }
 
     /// Parses `git status --porcelain=v2 --branch`.
     static func parse(_ output: String) -> GitStatus? {
@@ -46,8 +46,8 @@ struct GitStatus: Equatable {
 /// when the set of directories changes and every few seconds after that,
 /// since edits to files send no event. Directories outside a repository map
 /// to nil. Published state is touched on the main thread.
-final class GitStatusStore: ObservableObject {
-    @Published private(set) var statuses: [String: GitStatus] = [:]
+public final class GitStatusStore: ObservableObject {
+    @Published public private(set) var statuses: [String: GitStatus] = [:]
 
     private let git: String?
     private let queue = DispatchQueue(label: "dmucode.git")
@@ -55,13 +55,13 @@ final class GitStatusStore: ObservableObject {
     private var timer: Timer?
     private var running = false
 
-    init() {
+    public init() {
         git = ["/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"]
             .first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     /// The directories to keep up to date; others are dropped.
-    func track(_ newPaths: Set<String>) {
+    public func track(_ newPaths: Set<String>) {
         guard newPaths != paths else { return }
         paths = newPaths
         statuses = statuses.filter { newPaths.contains($0.key) }

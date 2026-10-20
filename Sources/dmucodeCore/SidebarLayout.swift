@@ -13,7 +13,7 @@ import Foundation
 /// shown there as "api". The prefix matches a group whatever its case, so
 /// "projects/x" joins an existing "Projects". Dragging it elsewhere
 /// afterwards is up to the user.
-struct SidebarLayout: Codable, Equatable {
+public struct SidebarLayout: Codable, Equatable {
     enum Entry: Codable, Equatable {
         case group(String)
         case session(String)
@@ -25,11 +25,11 @@ struct SidebarLayout: Codable, Equatable {
     }
 
     /// A sidebar row: a group header or a running session.
-    enum Row: Identifiable, Equatable {
+    public enum Row: Identifiable, Equatable {
         case group(String)
         case session(TmuxSession)
 
-        var id: String {
+        public var id: String {
             switch self {
             case .group(let name): return "group:" + name
             case .session(let session): return session.id
@@ -46,10 +46,12 @@ struct SidebarLayout: Codable, Equatable {
 
     private(set) var entries: [Entry] = []
 
-    var groups: [String] { entries.compactMap(\.groupName) }
+    public init() {}
+
+    public var groups: [String] { entries.compactMap(\.groupName) }
 
     /// Every group header, and the running sessions in their places.
-    func rows(for sessions: [TmuxSession]) -> [Row] {
+    public func rows(for sessions: [TmuxSession]) -> [Row] {
         var layout = self
         layout.include(sessions.map(\.name))
         let byName = Dictionary(sessions.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
@@ -120,7 +122,7 @@ struct SidebarLayout: Codable, Equatable {
 
     /// What the sidebar shows: the name without its prefix while the session
     /// is in the group the prefix names, else the whole name.
-    func displayName(ofSession name: String) -> String {
+    public func displayName(ofSession name: String) -> String {
         guard let (prefix, rest) = Self.prefix(of: name), Self.same(group(ofSession: name), prefix) else { return name }
         return rest
     }
@@ -196,7 +198,7 @@ struct SidebarLayout: Codable, Equatable {
     }
 
     /// The group a session is in; nil when ungrouped.
-    func group(ofSession name: String) -> String? {
+    public func group(ofSession name: String) -> String? {
         guard let index = entries.firstIndex(of: .session(name)) else { return nil }
         return entries[..<index].last(where: { $0.groupName != nil })?.groupName
     }

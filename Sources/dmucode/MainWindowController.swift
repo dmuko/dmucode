@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import dmucodeCore
 import SwiftUI
 
 /// The window: tmux sessions in a sidebar, the selected session's terminal on

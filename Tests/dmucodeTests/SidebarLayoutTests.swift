@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import dmucode
+@testable import dmucodeCore
 
 struct SidebarLayoutTests {
     private func sessions(_ names: String...) -> [TmuxSession] {

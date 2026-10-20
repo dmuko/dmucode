@@ -1,5 +1,6 @@
 import AppKit
 import CoreImage
+import dmucodeCore
 import IOSurface
 
 /// Test harness for driving the app without Accessibility or Screen

@@ -1,3 +1,4 @@
+import dmucodeCore
 import SwiftUI
 
 struct SidebarView: View {

@@ -1,4 +1,5 @@
 import AppKit
+import dmucodeCore
 import SwiftUI
 
 /// The palette's session mode (⌘K): finds a session by its name, by a

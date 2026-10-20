@@ -13,17 +13,21 @@ Each session the user opens gets a libghostty terminal surface that runs `tmux a
 
 ## Source layout
 
+The package has two targets. `dmucodeCore` (library) holds everything that doesn't need libghostty: the tmux wrapper and parsers, the session store, the sidebar layout, fuzzy matching and the git status. It imports only Foundation, so it builds, and its tests run, without GhosttyKit. `dmucode` (executable) is the app: AppKit and SwiftUI views, libghostty and the debug hook. It imports `dmucodeCore`, whose API is `public` only where the app uses it.
+
+`Package.swift` leaves the app and the GhosttyKit binary target out while `vendor/ghostty/macos/GhosttyKit.xcframework` doesn't exist, because SwiftPM rejects a missing binary target even when nothing being built uses it.
+
 | File | Role |
 |---|---|
 | [main.swift](../Sources/dmucode/main.swift) | App delegate, menus, startup. |
 | [MainWindowController.swift](../Sources/dmucode/MainWindowController.swift) | The window: sidebar, tab bar, terminals, palette, theme and fullscreen handling. Also `TerminalContainerController`, which holds one terminal per opened session. |
-| [SessionStore.swift](../Sources/dmucode/SessionStore.swift) | The sidebar's model: sessions, selection, attention markers, recent sessions, the sidebar layout. Owns the control-mode client and falls back to polling. |
-| [TmuxControlClient.swift](../Sources/dmucode/TmuxControlClient.swift) | The control-mode client: process, heartbeat, logging, and `ControlModeParser` for the protocol. |
-| [Tmux.swift](../Sources/dmucode/Tmux.swift) | The tmux CLI wrapper, the list formats and their parsers; `TmuxSession`, `TmuxWindow`, `TmuxPane`. |
-| [SidebarView.swift](../Sources/dmucode/SidebarView.swift), [SidebarLayout.swift](../Sources/dmucode/SidebarLayout.swift) | The sidebar, and its order and groups kept by session name. |
-| [TabBarView.swift](../Sources/dmucode/TabBarView.swift), [GitStatus.swift](../Sources/dmucode/GitStatus.swift) | The tabs and their git status. |
+| [SessionStore.swift](../Sources/dmucodeCore/SessionStore.swift) | The sidebar's model: sessions, selection, attention markers, recent sessions, the sidebar layout. Owns the control-mode client and falls back to polling. |
+| [TmuxControlClient.swift](../Sources/dmucodeCore/TmuxControlClient.swift) | The control-mode client: process, heartbeat, logging, and `ControlModeParser` for the protocol. |
+| [Tmux.swift](../Sources/dmucodeCore/Tmux.swift) | The tmux CLI wrapper, the list formats and their parsers; `TmuxSession`, `TmuxWindow`, `TmuxPane`. |
+| [SidebarView.swift](../Sources/dmucode/SidebarView.swift), [SidebarLayout.swift](../Sources/dmucodeCore/SidebarLayout.swift) | The sidebar, and its order and groups kept by session name. |
+| [TabBarView.swift](../Sources/dmucode/TabBarView.swift), [GitStatus.swift](../Sources/dmucodeCore/GitStatus.swift) | The tabs and their git status. |
 | [Palette.swift](../Sources/dmucode/Palette.swift) | The ⌘K palette: one field, two modes. |
-| [SessionSwitcher.swift](../Sources/dmucode/SessionSwitcher.swift), [FuzzyMatch.swift](../Sources/dmucode/FuzzyMatch.swift) | Session mode and its fuzzy matching. |
+| [SessionSwitcher.swift](../Sources/dmucode/SessionSwitcher.swift), [FuzzyMatch.swift](../Sources/dmucodeCore/FuzzyMatch.swift) | Session mode and its fuzzy matching. |
 | [CommandBar.swift](../Sources/dmucode/CommandBar.swift) | Command mode (tmux commands), and the palette's shared look. |
 | [TerminalView.swift](../Sources/dmucode/TerminalView.swift) | One libghostty surface in an `NSView`: keyboard through `interpretKeyEvents` (so dead keys and input methods work), mouse, scrolling, size. |
 | [GhosttyInput.swift](../Sources/dmucode/GhosttyInput.swift) | Key translation, adapted from Ghostty's macOS app (MIT). |
@@ -116,7 +120,7 @@ A marker has two sources.
 
 ## Testing
 
-- **Unit tests** (`swift test`, Swift Testing) cover:
+- **Unit tests** (`swift test`, Swift Testing) import `dmucodeCore` with `@testable import`, so they run on a fresh clone without building GhosttyKit. They cover:
   - `ControlModeParser`, the list and `git status` parsers, and the pane title filters
   - `FuzzyMatch` and `SidebarLayout`
 - **UI behavior** is checked with a test instance against its own tmux server (`DMUCODE_TMUX_SOCKET`), driven through the debug hook (`DMUCODE_DEBUG_DIR`). The hook's `state` command dumps:

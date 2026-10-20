@@ -1,4 +1,5 @@
 import AppKit
+import dmucodeCore
 
 // If started from inside tmux, `tmux attach` would refuse to nest.
 unsetenv("TMUX")

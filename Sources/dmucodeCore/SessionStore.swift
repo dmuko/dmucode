@@ -8,11 +8,11 @@ import Foundation
 /// server has none (or isn't running) the store polls the CLI once a second
 /// and connects as soon as a session appears. All state is touched on the
 /// main thread.
-final class SessionStore: ObservableObject {
-    @Published private(set) var sessions: [TmuxSession] = []
+public final class SessionStore: ObservableObject {
+    @Published public private(set) var sessions: [TmuxSession] = []
 
-    var selectedSession: TmuxSession? { sessions.first { $0.id == selectedID } }
-    @Published var selectedID: String? {
+    public var selectedSession: TmuxSession? { sessions.first { $0.id == selectedID } }
+    @Published public var selectedID: String? {
         didSet {
             if let id = selectedID, recentIDs.first != id {
                 recentIDs.removeAll { $0 == id }
@@ -28,34 +28,34 @@ final class SessionStore: ObservableObject {
         }
     }
     /// Sessions in the order they were shown, most recent first (for ⌘K).
-    private(set) var recentIDs: [String] = []
+    public private(set) var recentIDs: [String] = []
     /// The sidebar's order and groups; `sessions` follows it.
-    @Published private(set) var layout = SidebarLayout()
-    var sidebarRows: [SidebarLayout.Row] { layout.rows(for: sessions) }
+    @Published public private(set) var layout = SidebarLayout()
+    public var sidebarRows: [SidebarLayout.Row] { layout.rows(for: sessions) }
     /// The error shown under the sidebar. Kept apart by source, so a
     /// successful refresh doesn't wipe a command's error a moment later.
-    var errorMessage: String? { commandError ?? connectionError ?? listError }
+    public var errorMessage: String? { commandError ?? connectionError ?? listError }
     /// A tmux command failed (e.g. renaming to a taken name). Stays until
     /// the next command succeeds or the user dismisses it.
-    @Published private(set) var commandError: String?
+    @Published public private(set) var commandError: String?
     /// The control-mode client couldn't start. Stays until it connects.
     @Published private(set) var connectionError: String?
     /// Listing the sessions failed. Cleared by the next successful listing.
     @Published private(set) var listError: String?
     /// True while updates arrive as control-mode events, false while polling.
-    @Published private(set) var isLive = false
+    @Published public private(set) var isLive = false
     /// True while tmux-continuum restores sessions after we started the server.
-    @Published private(set) var isRestoring = false
+    @Published public private(set) var isRestoring = false
     /// Sessions that want attention according to our own terminals: a bell,
     /// or a desktop notification such as Claude Code waiting for input
     /// (its text, if any). tmux's own bell flags are on the windows.
-    @Published private(set) var alerts: [String: TerminalAlert] = [:]
+    @Published public private(set) var alerts: [String: TerminalAlert] = [:]
 
     /// A tmux client moved to another session (prefix s, switch-client...):
     /// the client's tty and the new session id.
-    var onClientSessionChanged: ((_ tty: String, _ sessionID: String) -> Void)?
+    public var onClientSessionChanged: ((_ tty: String, _ sessionID: String) -> Void)?
 
-    let tmux: Tmux
+    public let tmux: Tmux
     private let queue = DispatchQueue(label: "dmucode.tmux")
     private var control: TmuxControlClient?
     private var pollTimer: Timer?
@@ -90,7 +90,7 @@ final class SessionStore: ObservableObject {
         "%subscription-changed",
     ]
 
-    init(tmux: Tmux) {
+    public init(tmux: Tmux) {
         self.tmux = tmux
         if let data = UserDefaults.standard.data(forKey: layoutKey),
            let saved = try? JSONDecoder().decode(SidebarLayout.self, from: data) {
@@ -98,7 +98,7 @@ final class SessionStore: ObservableObject {
         }
     }
 
-    func start() {
+    public func start() {
         startPolling()
         let tmux = self.tmux
         queue.async {
@@ -132,7 +132,7 @@ final class SessionStore: ObservableObject {
         isRestoring = false
     }
 
-    func refresh(then completion: (() -> Void)? = nil) {
+    public func refresh(then completion: (() -> Void)? = nil) {
         if let control {
             control.listSessions { [weak self] result in
                 // A reply failing because the connection just dropped isn't
@@ -166,7 +166,7 @@ final class SessionStore: ObservableObject {
     }
 
     /// Runs a tmux command off the main thread, then refreshes the list.
-    func perform(_ work: @escaping (Tmux) throws -> Void, then completion: (() -> Void)? = nil) {
+    public func perform(_ work: @escaping (Tmux) throws -> Void, then completion: (() -> Void)? = nil) {
         let tmux = self.tmux
         queue.async {
             let error: Error?
@@ -178,22 +178,22 @@ final class SessionStore: ObservableObject {
         }
     }
 
-    func dismissCommandError() {
+    public func dismissCommandError() {
         commandError = nil
     }
 
     // MARK: Attention
 
-    func raiseAlert(sessionID: String, message: String?) {
+    public func raiseAlert(sessionID: String, message: String?) {
         // A bell right after a notification keeps the notification's text.
         alerts[sessionID] = TerminalAlert(message: message ?? alerts[sessionID]?.message)
     }
 
-    func clearAlert(sessionID: String) {
+    public func clearAlert(sessionID: String) {
         if alerts[sessionID] != nil { alerts[sessionID] = nil }
     }
 
-    func needsAttention(_ session: TmuxSession) -> Bool {
+    public func needsAttention(_ session: TmuxSession) -> Bool {
         alerts[session.id] != nil || session.hasBell
     }
 
@@ -201,7 +201,7 @@ final class SessionStore: ObservableObject {
 
     /// Makes a window the session's current one. The tab moves right away;
     /// %session-window-changed then confirms it.
-    func selectWindow(_ windowID: String, in sessionID: String) {
+    public func selectWindow(_ windowID: String, in sessionID: String) {
         if let s = sessions.firstIndex(where: { $0.id == sessionID }) {
             for w in sessions[s].windows.indices {
                 sessions[s].windows[w].isActive = sessions[s].windows[w].id == windowID
@@ -213,14 +213,14 @@ final class SessionStore: ObservableObject {
     // MARK: Sidebar order and groups
 
     /// A drag in the sidebar (see SidebarLayout.move).
-    func moveSidebarRow(from source: Int, to destination: Int) {
+    public func moveSidebarRow(from source: Int, to destination: Int) {
         let rows = sidebarRows
         changeLayout { $0.move(rows, from: source, to: destination) }
     }
 
     /// False if a group with that name exists.
     @discardableResult
-    func addGroup(_ name: String, moving sessionID: String? = nil) -> Bool {
+    public func addGroup(_ name: String, moving sessionID: String? = nil) -> Bool {
         guard !layout.groups.contains(name) else { return false }
         changeLayout { layout in
             layout.addGroup(name)
@@ -232,17 +232,17 @@ final class SessionStore: ObservableObject {
     }
 
     @discardableResult
-    func renameGroup(_ old: String, to new: String) -> Bool {
+    public func renameGroup(_ old: String, to new: String) -> Bool {
         guard !layout.groups.contains(new) else { return false }
         changeLayout { $0.renameGroup(old, to: new) }
         return true
     }
 
-    func removeGroup(_ name: String) {
+    public func removeGroup(_ name: String) {
         changeLayout { $0.removeGroup(name) }
     }
 
-    func setGroup(_ group: String?, forSession id: String) {
+    public func setGroup(_ group: String?, forSession id: String) {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
         changeLayout { $0.setGroup(group, ofSession: session.name) }
     }
@@ -266,7 +266,7 @@ final class SessionStore: ObservableObject {
     // MARK: Command bar
 
     /// Runs a command-bar line as the session's active pane, then refreshes.
-    func runCommandLine(_ line: String, in sessionID: String, done: @escaping (Result<String, Error>) -> Void) {
+    public func runCommandLine(_ line: String, in sessionID: String, done: @escaping (Result<String, Error>) -> Void) {
         let tmux = self.tmux
         queue.async {
             let result = Result {
@@ -280,7 +280,7 @@ final class SessionStore: ObservableObject {
     }
 
     /// Every pane, over the control connection when there is one.
-    func listPanes(_ done: @escaping ([TmuxPane]) -> Void) {
+    public func listPanes(_ done: @escaping ([TmuxPane]) -> Void) {
         if let control {
             control.listPanes { done((try? $0.get()) ?? []) }
             return
@@ -292,11 +292,11 @@ final class SessionStore: ObservableObject {
         }
     }
 
-    func selectPane(_ paneID: String) {
+    public func selectPane(_ paneID: String) {
         perform { tmux in try tmux.selectPane(id: paneID) }
     }
 
-    func listCommands(_ done: @escaping ([TmuxCommand]) -> Void) {
+    public func listCommands(_ done: @escaping ([TmuxCommand]) -> Void) {
         let tmux = self.tmux
         queue.async {
             let commands = (try? tmux.listCommands()) ?? []
@@ -425,7 +425,7 @@ final class SessionStore: ObservableObject {
     }
 }
 
-struct TerminalAlert: Equatable {
+public struct TerminalAlert: Equatable {
     /// A desktop notification's text; nil for a plain bell.
-    var message: String?
+    public var message: String?
 }

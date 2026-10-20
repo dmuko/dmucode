@@ -2,11 +2,11 @@
 /// in the candidate in order, ignoring case. Matches at word starts and in
 /// runs score higher and gaps cost a little, so "dc" ranks "dmu-code" above
 /// "dmucode" and "code" ranks "~/Code/x" above "~/dmucode".
-enum FuzzyMatch {
-    struct Match: Equatable {
-        let score: Int
+public enum FuzzyMatch {
+    public struct Match: Equatable {
+        public let score: Int
         /// Positions of the matched characters in the candidate.
-        let indices: [Int]
+        public let indices: [Int]
     }
 
     private static let matchScore = 16
@@ -16,7 +16,7 @@ enum FuzzyMatch {
     private static let gapPenalty = 1
     private static let none = Int.min / 2
 
-    static func match(_ query: String, in candidate: String) -> Match? {
+    public static func match(_ query: String, in candidate: String) -> Match? {
         let q = query.map { $0.lowercased() }
         let original = Array(candidate)
         let c = original.map { $0.lowercased() }

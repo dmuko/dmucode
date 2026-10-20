@@ -1,5 +1,5 @@
 import Testing
-@testable import dmucode
+@testable import dmucodeCore
 
 struct TmuxParseTests {
     @Test func sessionsWithWindowsAndClients() {
