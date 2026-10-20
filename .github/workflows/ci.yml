@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to the same PR or branch makes the older run pointless.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # The unit tests need only dmucodeCore. Package.swift leaves the app target
+  # out while GhosttyKit.xcframework is missing, so this job needs neither the
+  # vendor/ghostty submodule nor Zig, and runs in a minute or two.
+  test:
+    runs-on: macos-15 # Xcode 16+ ships Swift 6, which swift-tools-version 6.0 needs
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false # no Ghostty checkout: that is what keeps this fast
+
+      - name: Show toolchain
+        run: swift --version
+
+      - run: swift test

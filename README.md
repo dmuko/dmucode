@@ -268,6 +268,7 @@ swift test              # unit tests (Swift Testing)
 ```
 
 - **Tests:** the unit tests cover the parsers (tmux control mode, tmux list output, `git status`), the palette's fuzzy matching, and the sidebar layout. They import the `dmucodeCore` library target with `@testable import dmucodeCore`, so `swift test` builds only `dmucodeCore` and works on a fresh clone without GhosttyKit. The app target needs GhosttyKit, so `swift build` and `scripts/build-app.sh` need it built first.
+- **CI:** [.github/workflows/ci.yml](.github/workflows/ci.yml) runs `swift test` on a macOS runner for every pull request and push to `main`. It checks out without the Ghostty submodule, so it covers `dmucodeCore` only; the app build isn't in CI.
 - **Trying changes safely:** run a second instance against its own tmux server, so your real sessions aren't touched:
 
   ```bash
