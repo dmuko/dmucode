@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before anything reads the settings (the store, the window frame).
+        if let id = Bundle.main.bundleIdentifier { DefaultsMigration.run(into: id) }
         NSApp.mainMenu = makeMainMenu()
 
         guard let tmux = Tmux.resolve() else {
@@ -50,6 +52,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let main = NSMenu()
 
         let app = NSMenu()
+        // ⌘⇧, like Ghostty; saving a config file reloads it too.
+        app.addItem(withTitle: "Reload Ghostty Config", action: #selector(MainWindowController.reloadGhosttyConfig(_:)), keyEquivalent: ",")
+            .keyEquivalentModifierMask = [.command, .shift]
+        app.addItem(.separator())
         app.addItem(withTitle: "Hide dmucode", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(.separator())
         // Quitting only detaches: the tmux sessions keep running.
@@ -65,6 +71,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let session = NSMenu(title: "Session")
         // ⌘: (⌘⇧. on US and Finnish layouts), like tmux's prefix :.
         session.addItem(withTitle: "tmux Command…", action: #selector(MainWindowController.toggleCommandBar(_:)), keyEquivalent: ":")
+        // Takes ⌘K from Ghostty's clear_screen; in tmux, `clear` or C-l does that.
+        session.addItem(withTitle: "Switch to Session…", action: #selector(MainWindowController.toggleSwitcher(_:)), keyEquivalent: "k")
         session.addItem(.separator())
         session.addItem(withTitle: "New Session…", action: #selector(MainWindowController.newSession(_:)), keyEquivalent: "n")
         session.addItem(withTitle: "Rename Session…", action: #selector(MainWindowController.renameSelected(_:)), keyEquivalent: "r")
@@ -105,6 +113,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let window = NSMenu(title: "Window")
         window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        // ⌃⌘F, the system's and Ghostty's; AppKit retitles it to Exit Full Screen.
+        window.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+            .keyEquivalentModifierMask = [.command, .control]
         window.addItem(withTitle: "Toggle Sidebar", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s")
             .keyEquivalentModifierMask = [.command, .control]
         main.addItem(submenu: window, title: "Window")

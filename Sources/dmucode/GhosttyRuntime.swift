@@ -4,11 +4,21 @@ import GhosttyKit
 /// Owns the process-wide `ghostty_app_t` and answers libghostty's runtime
 /// callbacks. Callbacks that concern one surface arrive with that surface's
 /// userdata, which is its `TerminalView`.
-final class GhosttyRuntime {
+final class GhosttyRuntime: ObservableObject {
     static let shared = GhosttyRuntime()
 
     private(set) var app: ghostty_app_t?
+    /// The config in effect, for the chrome's colors. After a reload it is
+    /// the one libghostty applied (CONFIG_CHANGE), with conditional parts
+    /// such as `theme = light:…,dark:…` resolved.
     private var config: ghostty_config_t?
+    private var watcher: ConfigWatcher?
+
+    /// The terminal colors the window chrome should match.
+    @Published private(set) var theme = TerminalTheme(background: .black, foreground: .white, opacity: 1)
+    /// Problems in the last loaded config (unknown keys, bad values...).
+    /// libghostty skips those lines and applies the rest, as Ghostty does.
+    @Published private(set) var configErrors: [String] = []
 
     private init() {}
 
@@ -18,17 +28,8 @@ final class GhosttyRuntime {
         guard ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS else {
             return false
         }
-        guard let config = ghostty_config_new() else { return false }
-        ghostty_config_load_default_files(config)
-        ghostty_config_load_recursive_files(config)
-        ghostty_config_finalize(config)
-        for i in 0..<ghostty_config_diagnostics_count(config) {
-            let diag = ghostty_config_get_diagnostic(config, i)
-            if let message = diag.message {
-                NSLog("ghostty config: %@", String(cString: message))
-            }
-        }
-        self.config = config
+        guard let config = loadConfig() else { return false }
+        setConfig(config)
 
         var runtime = ghostty_runtime_config_s(
             userdata: nil,
@@ -57,25 +58,60 @@ final class GhosttyRuntime {
         guard let app = ghostty_app_new(&runtime, config) else { return false }
         self.app = app
         ghostty_app_set_focus(app, NSApp.isActive)
+        watcher = ConfigWatcher(directories: ConfigWatcher.defaultDirectories) { [weak self] in
+            self?.reloadConfig()
+        }
         return true
     }
 
+    // MARK: Config
+
+    /// Reads the config files again and applies them to every terminal
+    /// (⌘⇧, or Ghostty's reload_config binding, or a saved config file).
+    func reloadConfig() {
+        guard let app, let new = loadConfig() else { return }
+        // Updates every surface, then reports the applied config through
+        // CONFIG_CHANGE, which takes it over (see setConfig). The caller
+        // keeps ownership of `new`.
+        ghostty_app_update_config(app, new)
+        ghostty_config_free(new)
+    }
+
+    /// A fresh config from the default files, its problems published.
+    private func loadConfig() -> ghostty_config_t? {
+        guard let config = ghostty_config_new() else { return nil }
+        ghostty_config_load_default_files(config)
+        ghostty_config_load_recursive_files(config)
+        ghostty_config_finalize(config)
+        var errors: [String] = []
+        for i in 0..<ghostty_config_diagnostics_count(config) {
+            if let message = ghostty_config_get_diagnostic(config, i).message {
+                errors.append(String(cString: message))
+            }
+        }
+        for error in errors { NSLog("ghostty config: %@", error) }
+        configErrors = errors
+        return config
+    }
+
+    /// Takes ownership of `config` for the chrome's colors.
+    private func setConfig(_ config: ghostty_config_t) {
+        if let old = self.config { ghostty_config_free(old) }
+        self.config = config
+        let theme = TerminalTheme(
+            background: color("background") ?? .black,
+            foreground: color("foreground") ?? .white,
+            opacity: backgroundOpacity)
+        if theme != self.theme { self.theme = theme }
+    }
+
     /// `background-opacity` from the Ghostty config; 1 means opaque.
-    var backgroundOpacity: Double {
+    private var backgroundOpacity: Double {
         guard let config else { return 1 }
         var value: Double = 1
         let key = "background-opacity"
         _ = ghostty_config_get(config, &value, key, UInt(key.utf8.count))
         return value
-    }
-
-    /// The terminal colors the window chrome should match. Read from the
-    /// resolved config, so the `theme` and the user's own overrides apply.
-    var theme: TerminalTheme {
-        TerminalTheme(
-            background: color("background") ?? .black,
-            foreground: color("foreground") ?? .white,
-            opacity: backgroundOpacity)
     }
 
     private func color(_ key: String) -> NSColor? {
@@ -137,6 +173,26 @@ final class GhosttyRuntime {
             let body = n.body.map { String(cString: $0) } ?? ""
             let view = Self.view(target)
             DispatchQueue.main.async { view?.onAlert?(body.isEmpty ? title : body) }
+            return true
+        case GHOSTTY_ACTION_RELOAD_CONFIG:
+            // Ghostty's reload_config binding (⌘⇧, by default). A soft reload
+            // re-applies the config in effect. Always app-wide: one config.
+            let soft = action.action.reload_config.soft
+            DispatchQueue.main.async {
+                guard let app = self.app else { return }
+                if soft, let config = self.config {
+                    ghostty_app_update_config(app, config)
+                } else if !soft {
+                    self.reloadConfig()
+                }
+            }
+            return true
+        case GHOSTTY_ACTION_CONFIG_CHANGE:
+            // The applied config lives only during the callback: clone it.
+            guard target.tag == GHOSTTY_TARGET_APP,
+                  let applied = action.action.config_change.config,
+                  let clone = ghostty_config_clone(applied) else { return false }
+            DispatchQueue.main.async { self.setConfig(clone) }
             return true
         default:
             // Everything else (Ghostty tabs, splits, windows, title...) is
@@ -258,7 +314,7 @@ final class GhosttyRuntime {
     }
 }
 
-struct TerminalTheme {
+struct TerminalTheme: Equatable {
     let background: NSColor
     let foreground: NSColor
     /// `background-opacity`; below 1 the window is see-through.
@@ -268,6 +324,9 @@ struct TerminalTheme {
 
     /// Chrome (title bar, sidebar) background, as translucent as the terminals.
     var chromeBackground: NSColor { background.withAlphaComponent(opacity) }
+
+    /// The same colors without translucency.
+    var opaque: TerminalTheme { TerminalTheme(background: background, foreground: foreground, opacity: 1) }
 
     /// Dark or light system appearance, so text and controls stay readable.
     var appearance: NSAppearance? {

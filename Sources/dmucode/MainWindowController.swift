@@ -10,17 +10,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     let store: SessionStore
     private let git = GitStatusStore()
     private let commandBar = CommandBarModel()
+    private let switcher: SessionSwitcherModel
+    private let palette: PaletteModel
+    private let chrome = ChromeTheme(GhosttyRuntime.shared.theme)
     private let terminals: TerminalContainerController
     private var cancellables: Set<AnyCancellable> = []
 
     init(store: SessionStore) {
         self.store = store
+        self.switcher = SessionSwitcherModel(store: store)
+        self.palette = PaletteModel(sessions: switcher, command: commandBar)
         let theme = GhosttyRuntime.shared.theme
+        let git = self.git, palette = self.palette, chrome = self.chrome
         // The real actions need self; set below.
-        let tabBar = NSHostingView(rootView: TabBarView(
-            store: store, git: git, theme: theme, onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }))
-        let commandBarView = NSHostingView(rootView: CommandBarView(model: commandBar, theme: theme))
-        self.terminals = TerminalContainerController(tmux: store.tmux, tabBar: tabBar, commandBar: commandBarView)
+        let tabBar = NSHostingView(rootView: Themed(chrome) { TabBarView(
+            store: store, git: git, theme: $0, onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }) })
+        let overlay = NSHostingView(rootView: Themed(chrome) {
+            PaletteView(palette: palette, store: store, theme: $0) })
+        self.terminals = TerminalContainerController(tmux: store.tmux, tabBar: tabBar, overlay: overlay)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
@@ -37,22 +44,24 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
         super.init(window: window)
         window.delegate = self
-        tabBar.rootView = TabBarView(
+        tabBar.rootView = Themed(chrome) { [weak self] theme in TabBarView(
             store: store,
             git: git,
             theme: theme,
-            onSelect: { [weak self] in self?.selectWindow($0) },
-            onNew: { [weak self] in self?.newWindow() },
-            onRename: { [weak self] in self?.renameWindow($0) },
-            onClose: { [weak self] in self?.closeWindow($0) })
+            onSelect: { self?.selectWindow($0) },
+            onNew: { self?.newWindow() },
+            onRename: { self?.renameWindow($0) },
+            onClose: { self?.closeWindow($0) }) }
 
         let split = NSSplitViewController()
-        let sidebar = NSHostingController(rootView: SidebarView(
+        let sidebar = NSHostingController(rootView: Themed(chrome) { [weak self] theme in SidebarView(
             store: store,
             theme: theme,
-            onNew: { [weak self] in self?.newSession(nil) },
-            onRename: { [weak self] in self?.rename($0) },
-            onKill: { [weak self] in self?.kill($0) }))
+            onNew: { self?.newSession(nil) },
+            onRename: { self?.rename($0) },
+            onKill: { self?.kill($0) },
+            onNewGroup: { self?.newGroup(moving: $0) },
+            onRenameGroup: { self?.renameGroup($0) }) })
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 360
@@ -69,7 +78,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             }
             self.store.runCommandLine(line, in: sessionID, done: done)
         }
-        commandBar.onClose = { [weak self] in self?.terminals.setCommandBarVisible(false) }
+        commandBar.onDone = { [weak self] in self?.palette.close() }
+        palette.onClose = { [weak self] in self?.terminals.setOverlayVisible(false) }
+        switcher.onChoose = { [weak self] session, window, pane in
+            guard let self else { return }
+            self.palette.close()
+            self.store.selectedID = session.id
+            if let window, !window.isActive { self.selectWindow(window) }
+            if let pane, !pane.isActive { self.store.selectPane(pane.id) }
+        }
         terminals.onAlert = { [weak self] sessionID, message in
             guard let self else { return }
             // Nothing to point at if the user is looking at that session.
@@ -118,23 +135,35 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 self?.updateTitle()
             }
             .store(in: &cancellables)
+        // A reloaded Ghostty config: the terminals update themselves, the
+        // chrome here (see updateChrome).
+        GhosttyRuntime.shared.$theme
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateChrome() }
+            .store(in: &cancellables)
+        GhosttyRuntime.shared.$configErrors
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in self?.showConfigErrors($0) }
+            .store(in: &cancellables)
     }
 
     required init?(coder: NSCoder) { fatalError("not supported") }
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
-        applyWindowBackground()
+        applyWindowBackground(chrome.theme)
+        showConfigErrors(GhosttyRuntime.shared.configErrors)
     }
 
     /// Like Ghostty's own app: with background-opacity < 1 the window must be
     /// see-through, or the terminal's translucent background is composited
     /// over an opaque window. Blur only takes effect once the window is
-    /// visible. (Ghostty also turns this off in native fullscreen; not yet.)
-    private func applyWindowBackground() {
+    /// visible.
+    private func applyWindowBackground(_ theme: TerminalTheme) {
         guard let window else { return }
-        let theme = GhosttyRuntime.shared.theme
         guard theme.isTranslucent else {
+            window.isOpaque = true
             window.backgroundColor = theme.background
             return
         }
@@ -143,6 +172,75 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.backgroundColor = .white.withAlphaComponent(0.001)
         GhosttyRuntime.shared.setBackgroundBlur(window)
     }
+
+    /// Applies the config's theme to the chrome, opaque in native fullscreen
+    /// as in Ghostty: behind the window there is only the Space's gray
+    /// background, which the sidebar's material and any translucency would
+    /// show. The terminals stay as configured, now on an opaque backdrop of
+    /// the same color, so they look opaque too.
+    private func updateChrome() {
+        let config = GhosttyRuntime.shared.theme
+        let theme = window?.styleMask.contains(.fullScreen) == true ? config.opaque : config
+        if chrome.theme != theme { chrome.theme = theme }
+        window?.appearance = theme.appearance
+        applyWindowBackground(theme)
+        terminals.applyTheme(theme)
+    }
+
+    // MARK: Ghostty config
+
+    @objc func reloadGhosttyConfig(_ sender: Any?) {
+        GhosttyRuntime.shared.reloadConfig()
+    }
+
+    /// The errors last shown, so saving the same broken config again (or
+    /// reloading) doesn't repeat the sheet.
+    private var shownConfigErrors: [String] = []
+
+    /// libghostty skips bad lines and applies the rest, like Ghostty; this
+    /// says which were skipped.
+    private func showConfigErrors(_ errors: [String]) {
+        guard !errors.isEmpty else {
+            shownConfigErrors = []
+            return
+        }
+        guard errors != shownConfigErrors, let window, window.isVisible, window.attachedSheet == nil else { return }
+        shownConfigErrors = errors
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "The Ghostty config has errors"
+        alert.informativeText = errors.prefix(10).joined(separator: "\n")
+            + (errors.count > 10 ? "\n…" : "")
+            + "\n\nThose lines were skipped; the rest of the config is in effect."
+        alert.beginSheetModal(for: window)
+    }
+
+    var themeState: String {
+        let theme = GhosttyRuntime.shared.theme
+        func hex(_ color: NSColor) -> String {
+            let c = color.usingColorSpace(.sRGB) ?? color
+            return String(format: "#%02x%02x%02x", Int(round(c.redComponent * 255)),
+                          Int(round(c.greenComponent * 255)), Int(round(c.blueComponent * 255)))
+        }
+        let effects = (window?.contentView?.superview ?? window?.contentView).map(Self.effectViews) ?? []
+        return "theme=\(hex(theme.background))/\(hex(theme.foreground)) opacity=\(theme.opacity) chrome-opacity=\(chrome.theme.opacity)"
+            + " window: opaque=\(window?.isOpaque ?? false) bg=\(window?.backgroundColor.map(hex) ?? "-")"
+            + " fullscreen=\(window?.styleMask.contains(.fullScreen) ?? false)"
+            + " effectViews=[\(effects.joined(separator: ","))]"
+            + " appearance=\(window?.appearance?.name.rawValue ?? "-")"
+            + " errors=\(GhosttyRuntime.shared.configErrors.count) sheet=\(window?.attachedSheet != nil)"
+    }
+
+    private static func effectViews(in view: NSView) -> [String] {
+        var found: [String] = []
+        if let effect = view as? NSVisualEffectView {
+            found.append("\(effect.material.rawValue)/\(effect.blendingMode == .behindWindow ? "behind" : "within")/\(effect.state.rawValue)")
+        }
+        return found + view.subviews.flatMap(effectViews)
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) { updateChrome() }
+    func windowDidExitFullScreen(_ notification: Notification) { updateChrome() }
 
     func windowDidBecomeKey(_ notification: Notification) {
         clearSelectedAlert()
@@ -226,6 +324,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         store.perform { tmux in try tmux.renameSession(id: session.id, to: name) }
     }
 
+    private func newGroup(moving session: TmuxSession?) {
+        guard let name = prompt(title: "New group", message: "Name for the group:", value: ""),
+              !name.isEmpty else { return }
+        if !store.addGroup(name, moving: session?.id) { NSSound.beep() }
+    }
+
+    private func renameGroup(_ group: String) {
+        guard let name = prompt(title: "Rename group", message: "New name for “\(group)”:", value: group),
+              !name.isEmpty, name != group else { return }
+        if !store.renameGroup(group, to: name) { NSSound.beep() }
+    }
+
     private func kill(_ session: TmuxSession) {
         let alert = NSAlert()
         alert.messageText = "Kill tmux session “\(session.name)”?"
@@ -237,36 +347,57 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         store.perform { tmux in try tmux.killSession(id: session.id) }
     }
 
-    // MARK: Command bar
+    // MARK: Palette
 
+    /// ⌘: opens the palette as a tmux command line; ⌘K as a session finder.
+    /// Either closes it if it is open in that mode, and switches it otherwise.
     @objc func toggleCommandBar(_ sender: Any?) {
-        if commandBar.isOpen {
-            commandBar.close()
+        guard store.selectedID != nil else { NSSound.beep(); return }
+        togglePalette(.command)
+    }
+
+    @objc func toggleSwitcher(_ sender: Any?) {
+        guard !store.sessions.isEmpty else { NSSound.beep(); return }
+        togglePalette(.sessions)
+    }
+
+    private func togglePalette(_ mode: PaletteModel.Mode) {
+        if palette.isOpen, palette.mode == mode {
+            palette.close()
             return
         }
-        guard store.selectedID != nil else { NSSound.beep(); return }
+        // For completions once a ":" is typed, whichever way it opened.
         if commandBar.commands.isEmpty {
             store.listCommands { [weak self] in self?.commandBar.commands = $0 }
         }
-        commandBar.open()
-        terminals.setCommandBarVisible(true)
+        store.listPanes { [weak self] in self?.switcher.panes = $0 }
+        palette.open(mode)
+        terminals.setOverlayVisible(true)
     }
 
-    /// Runs a line through the command bar (debug hook).
-    func runInCommandBar(_ line: String) {
-        if !commandBar.isOpen { toggleCommandBar(nil) }
-        commandBar.text = line
-        commandBar.submit()
+    /// Submits a line in the palette (debug hook): "logs" switches,
+    /// ":list-windows" runs a command.
+    func runInPalette(_ line: String) {
+        let mode: PaletteModel.Mode = line.hasPrefix(":") ? .command : .sessions
+        if !palette.isOpen || palette.mode != mode { togglePalette(mode) }
+        if mode == .command {
+            commandBar.text = String(line.dropFirst())
+            commandBar.submit()
+        } else {
+            switcher.text = line
+            switcher.choose()
+        }
     }
 
-    var commandBarState: String {
+    var paletteState: String {
         let outcome: String
         switch commandBar.outcome {
         case .output(let text)?: outcome = "output=" + text.replacingOccurrences(of: "\n", with: " | ")
         case .error(let text)?: outcome = "error=" + text
         case nil: outcome = "-"
         }
-        return "cmdbar open=\(commandBar.isOpen) \(outcome)"
+        let detail = palette.mode == .command ? "text=\(commandBar.text) \(outcome)" : switcher.debugState
+        return "palette open=\(palette.isOpen) mode=\(palette.mode) \(detail)"
     }
 
     // MARK: Windows (tabs)
@@ -358,9 +489,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 final class TerminalContainerController: NSViewController {
     private let tmux: Tmux
     private let tabBar: NSView
-    private let commandBar: NSView
+    /// The command bar or the switcher (PaletteOverlay).
+    private let overlay: NSView
     private var views: [String: TerminalView] = [:]
-    private let theme = GhosttyRuntime.shared.theme
+    private var theme = GhosttyRuntime.shared.theme
     private let titleStrip = NSView()
     private let placeholder = NSTextField(labelWithString: "")
     private let reattachButton = NSButton(title: "Attach", target: nil, action: nil)
@@ -371,10 +503,10 @@ final class TerminalContainerController: NSViewController {
     /// A terminal rang the bell (nil) or posted a notification (its text).
     var onAlert: ((_ sessionID: String, _ message: String?) -> Void)?
 
-    init(tmux: Tmux, tabBar: NSView, commandBar: NSView) {
+    init(tmux: Tmux, tabBar: NSView, overlay: NSView) {
         self.tmux = tmux
         self.tabBar = tabBar
-        self.commandBar = commandBar
+        self.overlay = overlay
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -410,26 +542,29 @@ final class TerminalContainerController: NSViewController {
         ])
         // Floats over the terminal below the tab bar, sized to its content
         // so it doesn't block clicks elsewhere.
-        commandBar.isHidden = true
-        commandBar.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(commandBar)
+        overlay.isHidden = true
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(overlay)
         NSLayoutConstraint.activate([
-            commandBar.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            commandBar.topAnchor.constraint(equalTo: root.safeAreaLayoutGuide.topAnchor, constant: TabBarView.height + 8),
+            overlay.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            overlay.topAnchor.constraint(equalTo: root.safeAreaLayoutGuide.topAnchor, constant: TabBarView.height + 8),
         ])
         view = root
     }
 
-    func setCommandBarVisible(_ visible: Bool) {
-        commandBar.isHidden = !visible
+    func setOverlayVisible(_ visible: Bool) {
+        overlay.isHidden = !visible
         if visible {
             // Above the terminals, which are added later.
-            view.addSubview(commandBar, positioned: .above, relativeTo: nil)
-            view.window?.makeFirstResponder(commandBar)
+            view.addSubview(overlay, positioned: .above, relativeTo: nil)
+            view.window?.makeFirstResponder(overlay)
         } else {
             // Next turn of the run loop: hiding the bar drops focus to the
             // window, and SwiftUI updates the field's focus after this.
-            DispatchQueue.main.async { [weak self] in self?.focusShown() }
+            // Not if the other panel opened meanwhile (⌘: while ⌘K is open).
+            DispatchQueue.main.async { [weak self] in
+                if self?.overlay.isHidden == true { self?.focusShown() }
+            }
         }
     }
 
@@ -539,13 +674,51 @@ final class TerminalContainerController: NSViewController {
         placeholder.stringValue = text
         placeholder.isHidden = false
         reattachButton.isHidden = !reattach
-        if theme.isTranslucent { view.layer?.backgroundColor = theme.chromeBackground.cgColor }
+        updateBackground()
     }
 
     private func hidePlaceholder() {
         tabBar.isHidden = false
         placeholder.isHidden = true
         reattachButton.isHidden = true
-        if theme.isTranslucent { view.layer?.backgroundColor = NSColor.clear.cgColor }
+        updateBackground()
     }
+
+    func applyTheme(_ theme: TerminalTheme) {
+        self.theme = theme
+        titleStrip.layer?.backgroundColor = theme.chromeBackground.cgColor
+        updateBackground()
+    }
+
+    /// Under the terminals: clear with translucent terminals, or it would
+    /// add to their background, except while no terminal is shown.
+    private func updateBackground() {
+        let color = !theme.isTranslucent ? theme.background
+            : placeholder.isHidden ? .clear : theme.chromeBackground
+        view.layer?.backgroundColor = color.cgColor
+    }
+}
+
+/// The theme the window chrome is drawn with: the Ghostty config's, made
+/// opaque in native fullscreen (MainWindowController.updateChrome).
+final class ChromeTheme: ObservableObject {
+    @Published var theme: TerminalTheme
+
+    init(_ theme: TerminalTheme) {
+        self.theme = theme
+    }
+}
+
+/// Renders its content with the chrome's theme, again whenever it changes
+/// (a reloaded Ghostty config, entering or leaving fullscreen).
+struct Themed<Content: View>: View {
+    @ObservedObject private var chrome: ChromeTheme
+    private let content: (TerminalTheme) -> Content
+
+    init(_ chrome: ChromeTheme, @ViewBuilder _ content: @escaping (TerminalTheme) -> Content) {
+        self.chrome = chrome
+        self.content = content
+    }
+
+    var body: some View { content(chrome.theme) }
 }
