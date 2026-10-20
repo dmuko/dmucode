@@ -116,7 +116,22 @@ A marker has two sources.
 
 - **Exited clients:** libghostty forces `wait-after-command` on for surfaces given a command. When the tmux client exits (detach, session killed), dmucode closes the view on `SHOW_CHILD_EXITED`; otherwise a "Press any key" screen would stay.
 - **Terminfo:** if the tmux config sets `default-terminal xterm-ghostty` and dmucode starts the server, the server gets a `TERMINFO` pointing to the app bundle's terminfo directory.
-- **Pinned version:** Ghostty is a submodule in `vendor/ghostty`, pinned to a commit the app is tested with. `ghostty.h` is internal and may change at any time; after moving the submodule, run `build-ghosttykit.sh` again and test.
+- **Pinned version:** Ghostty is a submodule in `vendor/ghostty`, pinned to a commit the app is tested with. See [The Ghostty pin](#the-ghostty-pin).
+
+## The Ghostty pin
+
+- **What:** `vendor/ghostty` is a shallow submodule pinned to `431126c` ("Update VOUCHED list", 2026-10-18), a commit on Ghostty's `main` branch. It is not a release tag.
+- **Why not a release tag:** checked on 2026-10-20 against the latest tag, `v1.3.1` (2026-03-13). GitHub's releases list for the repository contains only the rolling `tip` release (`releases/latest` returns 404), so the tags are the only releases.
+  - **Zig:** `v1.3.1` requires Zig 0.15.2 (`minimum_zig_version` in `build.zig.zon`). The pin requires 0.16.0, which is what `build-ghosttykit.sh` expects. Ghostty accepts only one Zig minor version (`requireZig`), so a Zig 0.16 toolchain can't build the tag.
+  - **API:** `v1.3.1`'s `ghostty.h` lacks what dmucode uses: `ghostty_surface_tty_name` (the tab's tty, in `TerminalView`), `ghostty_surface_deny_clipboard_request`, and the `ghostty_clipboard_complete_s`, `ghostty_clipboard_confirm_s` and `ghostty_clipboard_read_result_e` types. The clipboard callbacks also have different signatures there: `read_clipboard_cb` returns `bool` instead of a read result, and `ghostty_surface_complete_clipboard_request` takes a string and a flag instead of a struct. `GhosttyRuntime` is written against the newer shape.
+  - **Everything else** dmucode uses (the other `ghostty_*` calls, `GHOSTTY_ACTION_DESKTOP_NOTIFICATION`, `RING_BELL`, `SHOW_CHILD_EXITED` and so on) is present in both.
+  - **Not verified:** why this particular `main` commit. It was most likely the head of `main` when the project was set up (it is dated the day before the review), and nothing is known to depend on it beyond the API above.
+- **Moving the pin:**
+  1. Diff `include/ghostty.h` between the old and new commit, and check each `ghostty_` call and `GHOSTTY_` constant in `Sources/dmucode` against it. A changed signature is a compile error; a changed behavior is not.
+  2. Check `minimum_zig_version` in `build.zig.zon`. If the Zig minor version changes, update the check in `scripts/build-ghosttykit.sh`, the comment at its top and the README.
+  3. Rebuild with `scripts/build-ghosttykit.sh`, then `swift build`.
+  4. Run the app: terminals render, typing, mouse and IME work, copy and paste (including the paste confirmation), the bell and desktop notifications show attention markers, and a detached tmux client closes its view.
+- **Goal:** move to a release tag as soon as one has the API above and builds with the Zig version we use. Until then, the build script refuses a Zig that isn't 0.16.x, so a mismatch fails early with a clear message instead of deep inside the Ghostty build.
 
 ## Testing
 
