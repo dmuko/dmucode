@@ -546,6 +546,20 @@ struct SessionStoreLayoutTests {
         #expect(h.store.sessions.map(\.name) == ["a", "b"])
         #expect(h.store.sidebarRows.count == 3)
     }
+
+    @Test func aCollapsedGroupHidesItsRowsAndIsRemembered() throws {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a"), session("b")]
+        h.start()
+        h.store.addGroup("Work", moving: "$b")
+        h.store.toggleGroupCollapsed("Work")
+        #expect(h.store.sidebarRows.map(\.id) == ["$a", "group:Work"])
+        #expect(h.store.sessions.map(\.name) == ["a", "b"])
+        let saved = SidebarLayout.load(from: h.defaults.data(forKey: "sidebarLayout-test")).layout
+        #expect(saved.isCollapsed("Work"))
+        h.store.toggleGroupCollapsed("Work")
+        #expect(h.store.sidebarRows.count == 3)
+    }
 }
 
 struct SessionStoreTemplateTests {

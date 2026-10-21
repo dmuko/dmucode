@@ -158,6 +158,54 @@ struct SidebarLayoutTests {
         #expect(layout.groups == [])
     }
 
+    // MARK: Collapsing
+
+    @Test func aCollapsedGroupHidesItsRowsButKeepsTheOrder() {
+        var layout = sample()
+        layout.setCollapsed("Agents", true)
+        #expect(layout.isCollapsed("Agents"))
+        #expect(rows(layout, all) == ["a", "b", "c", "#Agents"])
+        // ⌘1…⌘9 and ⌘↑/⌘↓ still count the hidden sessions.
+        #expect(layout.sorted(all).map(\.name) == ["a", "b", "c", "x", "y"])
+        #expect(layout.sessions(inGroup: "Agents", of: all).map(\.name) == ["x", "y"])
+        layout.setCollapsed("Agents", false)
+        #expect(rows(layout, all) == ["a", "b", "c", "#Agents", "x", "y"])
+    }
+
+    @Test func onlyAnExistingGroupCollapses() {
+        var layout = sample()
+        let before = layout
+        layout.setCollapsed("Missing", true)
+        layout.setCollapsed("Agents", false)
+        #expect(layout == before)
+        #expect(!layout.isCollapsed("Missing"))
+    }
+
+    @Test func collapsedFollowsARenameAndEndsWithTheGroup() {
+        var layout = sample()
+        layout.setCollapsed("Agents", true)
+        layout.renameGroup("Agents", to: "Bots")
+        #expect(layout.isCollapsed("Bots") && !layout.isCollapsed("Agents"))
+        layout.removeGroup("Bots")
+        #expect(!layout.isCollapsed("Bots"))
+        layout.addGroup("Bots")
+        #expect(!layout.isCollapsed("Bots"))
+    }
+
+    @Test func dropAfterACollapsedHeaderJoinsTheGroupAtItsEnd() {
+        var layout = twoGroups()
+        layout.setCollapsed("Agents", true)
+        #expect(rows(layout, all) == ["b", "c", "#Agents", "#Work", "a"])
+        // "b" dropped on #Work: into Agents, after the hidden x and y.
+        layout.move(layout.rows(for: all), from: 0, to: 3)
+        #expect(layout.entries == [.session("c"), .group("Agents"), .session("x"), .session("y"), .session("b"),
+                                   .group("Work"), .session("a")])
+        // A collapsed group drags as a whole.
+        layout.move(layout.rows(for: all), from: 1, to: 4)
+        #expect(layout.entries == [.session("c"), .group("Work"), .session("a"), .group("Agents"),
+                                   .session("x"), .session("y"), .session("b")])
+    }
+
     @Test func setGroupMovesToTheEnd() {
         var layout = sample()
         layout.setGroup("Agents", ofSession: "a")
@@ -183,7 +231,8 @@ struct SidebarLayoutTests {
     }
 
     @Test func survivesEncoding() throws {
-        let layout = twoGroups()
+        var layout = twoGroups()
+        layout.setCollapsed("Work", true)
         let decoded = try JSONDecoder().decode(SidebarLayout.self, from: JSONEncoder().encode(layout))
         #expect(decoded == layout)
     }

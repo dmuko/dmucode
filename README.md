@@ -83,7 +83,8 @@ open /Applications/dmucode.app
 
 - **Row contents:** each row shows the session's name and its number of windows. A green dot means a terminal is attached to it: dmucode's own once you have opened the session, or one elsewhere. A gray dot means activity in a window, if you use `monitor-activity on` in tmux.
 - **Live indicator:** the dot in the sidebar header is green while updates arrive live over control mode, and gray while dmucode polls because there is no session to connect to yet.
-- **Context menu:** right-click a session for **Rename…**, **Move to Group** and **Kill Session…**. Right-click a group header for **Rename Group…** and **Remove Group**; removing a group keeps its sessions, ungrouped.
+- **Context menu:** right-click a session for **Rename…**, **Move to Group** and **Kill Session…**. Right-click a group header for **Hide Sessions** / **Show Sessions**, **Rename Group…** and **Remove Group**; removing a group keeps its sessions, ungrouped.
+- **Hiding a group:** click a group header to hide its sessions, as clicking the **tmux** header hides them all, and click it again to show them. A hidden group shows how many sessions it holds, a bell when one of them wants attention, and its name in white while the selected session is among them. The hidden sessions keep their ⌘1 … ⌘9 numbers and their places in ⌘↑ / ⌘↓ and ⌘K. Which groups are hidden is remembered with the layout.
 - **Dragging:**
   - Drag sessions to reorder them. Drop one under a group header to put it in that group, or above the first group to take it out.
   - Drag a group by its header to move it together with its sessions.
