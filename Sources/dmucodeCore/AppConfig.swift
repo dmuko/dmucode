@@ -3,14 +3,40 @@ import Foundation
 /// dmucode's own configuration file, `~/.config/dmucode/config`, in
 /// Ghostty's syntax: one `key = value` per line, `#` comments. Bad lines are
 /// skipped and reported, and the rest applies, as libghostty does with the
-/// Ghostty config. The only option so far is `keybind`.
+/// Ghostty config. Options: `keybind`, and a few switches for the window
+/// chrome. A repeated option takes the last value.
 public struct AppConfig: Equatable {
     /// The `keybind` lines, in order.
     public var keybinds: [Keybind] = []
+    /// `title-bar`: the window's title bar. Without it, the tabs sit at the
+    /// top of the window and the traffic lights are hidden.
+    public var titleBar = true
+    /// `tabs`: when the selected session's windows are shown as tabs.
+    public var tabs: TabBarMode = .always
+    /// `tab-git-status`: the branch and status on the tabs. Off, git isn't
+    /// run at all.
+    public var tabGitStatus = true
+    /// `sidebar-window-count`: "3 windows" under each session's name.
+    public var sidebarWindowCount = true
+    /// `sidebar-shortcuts`: the ⌘1…⌘9 hints on the sidebar rows.
+    public var sidebarShortcuts = true
     /// What was skipped: "line 3: unknown action: foo".
     public var errors: [String] = []
 
     public init() {}
+
+    public enum TabBarMode: String, CaseIterable {
+        case always
+        /// Only when the session has more than one window.
+        case auto
+        case never
+    }
+
+    /// The options other than `keybind` and their values, for the debug hook.
+    public var settingsDescription: String {
+        "title-bar=\(titleBar),tabs=\(tabs.rawValue),tab-git-status=\(tabGitStatus),"
+            + "sidebar-window-count=\(sidebarWindowCount),sidebar-shortcuts=\(sidebarShortcuts)"
+    }
 
     // MARK: Location
 
@@ -49,17 +75,39 @@ public struct AppConfig: Equatable {
             }
             let key = line[..<equals].trimmingCharacters(in: .whitespaces)
             let value = line[line.index(after: equals)...].trimmingCharacters(in: .whitespaces)
+            func bool(_ apply: (Bool) -> Void) {
+                if let flag = Self.parseBool(value) { apply(flag) } else { fail("\(key) must be true or false: \(value)") }
+            }
             switch key {
             case "keybind":
                 switch Keybind.parse(value) {
                 case .success(let keybind): config.keybinds.append(keybind)
                 case .failure(let error): fail(error.description)
                 }
+            case "title-bar": bool { config.titleBar = $0 }
+            case "tabs":
+                if let mode = TabBarMode(rawValue: value.lowercased()) {
+                    config.tabs = mode
+                } else {
+                    fail("tabs must be always, auto or never: \(value)")
+                }
+            case "tab-git-status": bool { config.tabGitStatus = $0 }
+            case "sidebar-window-count": bool { config.sidebarWindowCount = $0 }
+            case "sidebar-shortcuts": bool { config.sidebarShortcuts = $0 }
             default:
                 fail("unknown option: \(key)")
             }
         }
         return config
+    }
+
+    /// Ghostty's spellings: true/false, yes/no, on/off, 1/0, t/f, y/n.
+    static func parseBool(_ text: String) -> Bool? {
+        switch text.lowercased() {
+        case "true", "yes", "on", "1", "t", "y": return true
+        case "false", "no", "off", "0", "f", "n": return false
+        default: return nil
+        }
     }
 
     // MARK: Resolution

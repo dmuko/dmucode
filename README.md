@@ -12,7 +12,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 
 ## Features
 
-- **A config file.** `~/.config/dmucode/config`, in Ghostty's syntax, remaps the keyboard shortcuts and reloads when saved.
+- **A config file.** `~/.config/dmucode/config`, in Ghostty's syntax, remaps the keyboard shortcuts, hides the title bar or the tabs, trims the sidebar, and reloads when saved.
 - **Live session sidebar.** dmucode keeps a tmux control-mode connection, so new, renamed and closed sessions show up immediately, without polling.
 - **Ghostty terminals.** Each session gets its own libghostty surface with your `~/.config/ghostty/config`: fonts, themes, background opacity and blur. Saving the config applies it right away.
 - **Windows as tabs.** Each tab shows the directory of the window's active pane and, inside a git repository, the branch and whether there are changes, conflicts or unpushed commits.
@@ -173,9 +173,25 @@ The action names are for remapping in the [config file](#dmucode).
 
 ### dmucode
 
-dmucode reads `~/.config/dmucode/config` (`$XDG_CONFIG_HOME/dmucode/config` if that is set, or the file named by `DMUCODE_CONFIG`). The syntax is Ghostty's: one `key = value` per line, `#` starts a comment. The file is optional. Saving it applies the changes, as does ⇧⌘, (*Reload Config*), and lines with errors are skipped and listed in a sheet while the rest applies.
+dmucode reads `~/.config/dmucode/config` (`$XDG_CONFIG_HOME/dmucode/config` if that is set, or the file named by `DMUCODE_CONFIG`). The syntax is Ghostty's: one `key = value` per line, `#` starts a comment. The file is optional. Saving it applies the changes, as does ⇧⌘, (*Reload Config*), and lines with errors are skipped and listed in a sheet while the rest applies. [docs/config.example](docs/config.example) lists every option with its default, as comments, and can be copied as a starting point.
 
-The only option so far is `keybind`, which gives a shortcut to one of the actions listed under [Keyboard shortcuts](#keyboard-shortcuts):
+```
+title-bar = false
+tabs = auto
+sidebar-shortcuts = false
+```
+
+| Option | Values | Default | Effect |
+|---|---|---|---|
+| `title-bar` | `true`, `false` | `true` | `false` hides the title bar and the traffic lights, as Ghostty's `macos-titlebar-style = hidden`: the sidebar and the tabs start at the top of the window, which is dragged by its chrome. ⌘Q quits, ⌘M minimizes, ⌃⌘F goes full screen. |
+| `tabs` | `always`, `auto`, `never` | `always` | When the session's windows are shown as tabs; `auto` shows them once there is more than one window. ⌘T, ⌘← / ⌘→ and ⌥⌘1…9 work either way. |
+| `tab-git-status` | `true`, `false` | `true` | The branch and status on the tabs. `false` also stops running git. |
+| `sidebar-window-count` | `true`, `false` | `true` | "3 windows" under each session's name. Notifications are shown there either way. |
+| `sidebar-shortcuts` | `true`, `false` | `true` | The ⌘1 … ⌘9 hints on the sidebar rows. |
+
+Booleans accept `true`/`false`, `yes`/`no`, `on`/`off` and `1`/`0`. A repeated option takes its last value.
+
+`keybind` gives a shortcut to one of the actions listed under [Keyboard shortcuts](#keyboard-shortcuts):
 
 ```
 # Free ⌘K for Ghostty's clear_screen and find sessions with ⌘⇧K instead.

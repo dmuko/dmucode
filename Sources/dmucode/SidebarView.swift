@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SidebarView: View {
     @ObservedObject var store: SessionStore
+    @ObservedObject var settings: AppSettings
     let theme: TerminalTheme
     var onNew: () -> Void
     var onRename: (TmuxSession) -> Void
@@ -30,7 +31,9 @@ struct SidebarView: View {
                                 }
                         case .session(let session):
                             SessionRow(session: session, name: store.layout.displayName(ofSession: session.name),
-                                       alert: store.alerts[session.id], shortcut: shortcuts[session.id])
+                                       alert: store.alerts[session.id],
+                                       shortcut: settings.config.sidebarShortcuts ? shortcuts[session.id] : nil,
+                                       showWindowCount: settings.config.sidebarWindowCount)
                                 .tag(session.id)
                                 .contextMenu { sessionMenu(session) }
                         }
@@ -126,6 +129,7 @@ private struct SessionRow: View {
     let name: String
     let alert: TerminalAlert?
     let shortcut: Int?
+    let showWindowCount: Bool
 
     private var wantsAttention: Bool { alert != nil || session.hasBell }
 
@@ -147,7 +151,7 @@ private struct SessionRow: View {
                         .foregroundStyle(.orange)
                         .lineLimit(2)
                         .help(message)
-                } else {
+                } else if showWindowCount {
                     Text(session.windows.count == 1 ? "1 window" : "\(session.windows.count) windows")
                         .font(.caption)
                         .foregroundStyle(.secondary)

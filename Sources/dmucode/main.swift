@@ -13,7 +13,8 @@ signal(SIGPIPE, SIG_IGN)
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
     private var menu: AppMenu?
-    private var config = AppConfig()
+    private let settings = AppSettings()
+    private var config: AppConfig { settings.config }
     private var configWatcher: ConfigWatcher?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -47,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // sesh's session templates in the palette, if sesh is installed.
         let store = SessionStore(tmux: tmux, templates: Sesh.resolve(tmux: tmux))
-        let controller = MainWindowController(store: store)
+        let controller = MainWindowController(store: store, settings: settings)
         controller.reloadAppConfig = { [weak self] in self?.loadConfig() }
         windowController = controller
         controller.showWindow(nil)
@@ -66,9 +67,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// saved; the watcher starts once the directory exists.
     private func loadConfig() {
         let path = AppConfig.path()
-        config = AppConfig.load(path: path)
+        let config = AppConfig.load(path: path)
         for error in config.errors { Log.config.error("\(path, privacy: .public): \(error, privacy: .public)") }
         menu?.apply(config.keybindings)
+        settings.config = config
         windowController?.showConfigErrors(config.errors, of: .dmucode)
         if configWatcher == nil {
             configWatcher = ConfigWatcher(directories: [AppConfig.directory()], files: ["config"], subdirectories: []) { [weak self] in
@@ -78,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     var menuDebugState: String { menu?.debugState ?? "" }
+    var settingsDebugState: String { config.settingsDescription }
 
     // Opts in to secure coding for restorable state; macOS 14 warns otherwise.
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }

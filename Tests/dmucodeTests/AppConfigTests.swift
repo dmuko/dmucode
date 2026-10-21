@@ -104,6 +104,53 @@ struct AppConfigTests {
         #expect(bindings[.nextSession] == nil)
     }
 
+    @Test func parsesTheChromeOptions() {
+        let config = AppConfig.parse("""
+        title-bar = false
+        tabs = Auto
+        tab-git-status = off
+        sidebar-window-count = no
+        sidebar-shortcuts = 0
+        """)
+        #expect(config.errors == [])
+        #expect(!config.titleBar)
+        #expect(config.tabs == .auto)
+        #expect(!config.tabGitStatus)
+        #expect(!config.sidebarWindowCount)
+        #expect(!config.sidebarShortcuts)
+        #expect(config.settingsDescription
+            == "title-bar=false,tabs=auto,tab-git-status=false,sidebar-window-count=false,sidebar-shortcuts=false")
+    }
+
+    @Test func chromeOptionsDefaultToOnAndTheLastValueWins() {
+        let defaults = AppConfig()
+        #expect(defaults.titleBar && defaults.tabGitStatus && defaults.sidebarWindowCount && defaults.sidebarShortcuts)
+        #expect(defaults.tabs == .always)
+        let config = AppConfig.parse("tabs = never\ntabs = always\ntitle-bar = false\ntitle-bar = true")
+        #expect(config.tabs == .always)
+        #expect(config.titleBar)
+    }
+
+    @Test func badChromeValuesAreReported() {
+        let config = AppConfig.parse("""
+        title-bar = maybe
+        tabs = sometimes
+        """)
+        #expect(config.titleBar)
+        #expect(config.tabs == .always)
+        #expect(config.errors == [
+            "line 1: title-bar must be true or false: maybe",
+            "line 2: tabs must be always, auto or never: sometimes",
+        ])
+    }
+
+    @Test func boolSpellings() {
+        for text in ["true", "True", "yes", "on", "1", "t", "y"] { #expect(AppConfig.parseBool(text) == true, "\(text)") }
+        for text in ["false", "FALSE", "no", "off", "0", "f", "n"] { #expect(AppConfig.parseBool(text) == false, "\(text)") }
+        #expect(AppConfig.parseBool("") == nil)
+        #expect(AppConfig.parseBool("enabled") == nil)
+    }
+
     @Test func noConfigIsTheDefaults() {
         #expect(AppConfig.load(path: "/nonexistent/dmucode/config") == AppConfig())
         #expect(AppConfig().keybindings == KeybindAction.defaults)
@@ -125,5 +172,50 @@ struct AppConfigTests {
         try "keybind = cmd+shift+n=new_session\n".write(to: file, atomically: true, encoding: .utf8)
         let config = AppConfig.load(path: file.path)
         #expect(config.keybinds == [Keybind(trigger: KeyTrigger([.command, .shift], "n"), action: .newSession)])
+    }
+}
+
+struct ConfigExampleTests {
+    /// docs/config.example lists every option as a comment; uncommented,
+    /// each line must parse, and the keybind lines must restate the
+    /// defaults (the example is what users copy).
+    @Test func exampleParsesAndMatchesTheDefaults() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("docs/config.example")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        // "# keybind = cmd+k=switch_session   # palette…" -> "keybind = cmd+k=switch_session"
+        let pattern = #"^# ((?:keybind|title-bar|tabs|tab-git-status|sidebar-window-count|sidebar-shortcuts) = .*?)(?:\s{2,}#.*)?$"#
+        let regex = try NSRegularExpression(pattern: pattern)
+        var lines: [String] = []
+        for line in text.split(separator: "\n") {
+            let line = String(line)
+            if let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+               let range = Range(match.range(at: 1), in: line) {
+                lines.append(String(line[range]))
+            }
+        }
+        #expect(lines.count > 30)
+        let config = AppConfig.parse(lines.joined(separator: "\n"))
+        #expect(config.errors == [])
+        // The chrome options as written are the defaults.
+        var chrome = config
+        chrome.keybinds = []
+        #expect(chrome == AppConfig())
+        // The default keybind lines (before the examples) restate every default.
+        let defaultsSection = text.components(separatedBy: "# Examples:")[0]
+        let defaultLines = defaultsSection.split(separator: "\n").compactMap { line -> String? in
+            let line = String(line)
+            guard let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+                  let range = Range(match.range(at: 1), in: line), line.contains("keybind") else { return nil }
+            return String(line[range])
+        }
+        let restated = AppConfig.parse(defaultLines.joined(separator: "\n"))
+        #expect(restated.errors == [])
+        for keybind in restated.keybinds {
+            let action = try #require(keybind.action)
+            #expect(KeybindAction.defaults[action] == keybind.trigger, Comment(rawValue: action.name))
+        }
+        #expect(restated.keybinds.count == KeybindAction.defaults.count - 16) // goto_session/goto_tab 2…9 are "…"
     }
 }

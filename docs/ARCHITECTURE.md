@@ -20,7 +20,7 @@ The package has two targets. `dmucodeCore` (library) holds everything that doesn
 | File | Role |
 |---|---|
 | [main.swift](../Sources/dmucode/main.swift) | App delegate, startup, loading dmucode's config. |
-| [AppMenu.swift](../Sources/dmucode/AppMenu.swift), [AppConfig.swift](../Sources/dmucodeCore/AppConfig.swift) | The main menu, and the config file whose `keybind`s set its shortcuts. |
+| [AppMenu.swift](../Sources/dmucode/AppMenu.swift), [AppConfig.swift](../Sources/dmucodeCore/AppConfig.swift) | The main menu, and the config file whose `keybind`s set its shortcuts. `AppSettings.swift` hands the config's chrome options to the views. |
 | [MainWindowController.swift](../Sources/dmucode/MainWindowController.swift) | The window: sidebar, tab bar, terminals, palette, theme and fullscreen handling. Also `TerminalContainerController`, which holds one terminal per opened session. |
 | [SessionStore.swift](../Sources/dmucodeCore/SessionStore.swift) | The sidebar's model: sessions, selection, attention markers, recent sessions, the sidebar layout. Owns the control-mode client and falls back to polling. |
 | [TmuxBackend.swift](../Sources/dmucodeCore/TmuxBackend.swift) | The protocols `SessionStore` is written against (see [Testing](#testing)), and the production scheduler. |
@@ -127,6 +127,10 @@ A marker has two sources.
 - **The menu:** `AppMenu` builds the main menu once, keeping each item by its action, and `apply` sets the key equivalents and modifier masks; a reload never rebuilds the menu. Named keys become AppKit's function-key characters (`NSUpArrowFunctionKey`…).
 - **Reloading:** the app delegate loads the config at launch, on Reload Config (⇧⌘,, which reloads the Ghostty config too) and when `ConfigWatcher` sees `config` saved in the directory. The watcher is created once the directory exists, so a config directory created while the app runs is picked up after a manual reload. Errors go to the `config` log category and to the same sheet as Ghostty's config errors, kept apart per source so a fix to one doesn't hide the other's.
 - **Control shortcuts:** `TerminalView.performKeyEquivalent` keeps control combinations for the terminal, so a `ctrl+…` keybind is offered to the main menu first and goes to the terminal only if no item claims it.
+- **Chrome options:** the rest of the config (`title-bar`, `tabs`, `tab-git-status`, `sidebar-window-count`, `sidebar-shortcuts`) reaches the views through `AppSettings`, an `ObservableObject` the app delegate replaces the config in on each reload, so SwiftUI views observing it redraw. The window controller subscribes for the rest:
+  - **Tabs:** `TerminalContainerController.tabBarVisible` hides the tab bar and gives its height to the terminals; the palette's overlay follows. `auto` is decided from the selected session's window count whenever the sessions or the config change.
+  - **Git:** with `tab-git-status = false` the controller tracks no directories, so no `git status` runs.
+  - **Title bar:** done as Ghostty's `macos-titlebar-style = hidden`. The window keeps `.titled`, for its frame, shadow and resizing, while the title, the traffic lights and `NSTitlebarContainerView` are hidden. The title bar's safe area still exists, so the container ignores it (`ignoresTitleBar`) and the chrome's hosting views and controller (sidebar, tab bar, palette) get `safeAreaRegions = []`, or they would inset their content by the title bar's height; the window becomes movable by its background. Leaving native fullscreen brings the title bar's views back, so it is applied again then.
 
 ## Ghostty configuration
 
@@ -201,7 +205,7 @@ The package uses Swift 6 tooling in language mode 5, with complete concurrency c
   - `FuzzyMatch` and `SidebarLayout`
   - `SessionStore`: selection and the remembered session, the restore placeholder, alerts, the error sources, the switch between polling and control mode, and starting a session template
   - `Sesh`'s list parser and error messages, `Tmux.socketPath`, and the environment sesh runs in
-  - `AppConfig`: the parser and its errors, trigger spellings, action names, and how `keybind` lines resolve against the defaults
+  - `AppConfig`: the parser and its errors, trigger spellings, action names, how `keybind` lines resolve against the defaults, and the chrome options
 - **A fake tmux for `SessionStore`:** the store depends on protocols, not on `Process`. `TmuxBackend` is the tmux CLI (the real `Tmux` conforms), `TmuxControlConnection` is the control-mode client (`TmuxControlClient`), and `StoreScheduler` is where its work runs and when (queues, delays and the polling timer). The public `TmuxCommands` is the part of `TmuxBackend` that the app's `SessionStore.perform` closures get. The app creates the store with `SessionStore(tmux:)`, which wires in the real ones; tests use the internal initializer with `FakeTmux`, `FakeControl`, `FakeTemplates` (for `SessionTemplates`) and a `ManualScheduler` (in `Tests/dmucodeTests/SessionStoreFakes.swift`) that runs background work at once and moves time only when the test says so, so nothing waits. Each test gets its own `UserDefaults` suite, which is removed afterwards.
   - `ExecutableLookup` (on a fake filesystem, plus throwaway shell scripts for the login-shell fallback) and the pausing of `GitStatusStore` (with a fake timer and runner)
 - **UI behavior** is checked with a test instance against its own tmux server (`DMUCODE_TMUX_SOCKET`), driven through the debug hook (`DMUCODE_DEBUG_DIR`). The hook's `state` command dumps:

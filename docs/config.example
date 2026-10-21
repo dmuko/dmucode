@@ -1,0 +1,94 @@
+# dmucode configuration: ~/.config/dmucode/config
+# ($XDG_CONFIG_HOME/dmucode/config, or the file named by DMUCODE_CONFIG)
+#
+# One `key = value` per line; `#` starts a comment. The file is optional,
+# and so is every line in it: this example lists every option with its
+# default. Saving the file applies the changes, as does ⇧⌘, (Reload
+# Config). Lines with errors are skipped and listed in a sheet; the rest
+# applies. A repeated option takes its last value.
+
+# --- Window chrome ---
+
+# The window's title bar and traffic lights. With `false` the sidebar and
+# the tabs start at the top of the window, which is dragged by its chrome;
+# ⌘M minimizes, ⌃⌘F goes full screen, ⌘Q quits.
+# title-bar = true
+
+# When the selected session's tmux windows are shown as tabs:
+#   always  the tab bar is always there
+#   auto    only once the session has more than one window
+#   never   no tab bar (⌘T, ⌘← / ⌘→ and ⌥⌘1…9 still work)
+# tabs = always
+
+# The branch and status (changes, conflicts, ahead/behind) on the tabs.
+# With `false`, git isn't run at all.
+# tab-git-status = true
+
+# "3 windows" under each session's name in the sidebar. A notification's
+# text (e.g. Claude Code waiting for input) is shown there either way.
+# sidebar-window-count = true
+
+# The ⌘1 … ⌘9 hints on the sidebar rows.
+# sidebar-shortcuts = true
+
+# --- Keyboard shortcuts ---
+#
+#   keybind = <trigger>=<action>
+#
+# A trigger is modifiers and a key joined with "+": cmd (command, super),
+# ctrl (control), alt (opt, option), shift, then a character or a key name:
+# up, down, left, right, return (enter), tab, escape (esc), space,
+# backspace, delete, home, end, page_up, page_down, f1 … f12. Punctuation
+# as is (cmd+:, cmd+=, cmd++) or by name: plus, minus, equal, comma,
+# period, semicolon, colon, slash, backslash, grave, apostrophe, quote,
+# bracket_left, bracket_right. Everything but a function key needs a
+# modifier.
+#
+# An action has one shortcut. Binding a trigger takes it from the action
+# that had it; `<trigger>=unbind` frees a trigger, and a key no action
+# uses goes to the terminal (so unbinding cmd+k gives it back to Ghostty's
+# clear_screen). Later lines win. ctrl+… shortcuts take the key from the
+# terminal and from tmux.
+#
+# The defaults, one line per action:
+
+# dmucode
+# keybind = cmd+shift+,=reload_config      # dmucode and Ghostty configs
+# keybind = cmd+h=hide
+# keybind = cmd+q=quit                     # only detaches; sessions keep running
+
+# Edit
+# keybind = cmd+c=copy
+# keybind = cmd+v=paste
+# keybind = cmd+a=select_all
+
+# Session
+# keybind = cmd+:=tmux_command             # palette in command mode
+# keybind = cmd+k=switch_session           # palette: find a session, window or pane
+# keybind = cmd+n=new_session
+# keybind = cmd+r=rename_session
+# keybind = cmd+up=previous_session
+# keybind = cmd+down=next_session
+# keybind = cmd+1=goto_session:1           # … goto_session:9 = cmd+9
+# kill_session has no default shortcut: e.g. keybind = cmd+shift+w=kill_session
+
+# Tab (the session's tmux windows)
+# keybind = cmd+t=new_tab                  # in the current pane's directory
+# keybind = cmd+alt+r=rename_tab
+# keybind = cmd+w=close_tab                # asks first
+# keybind = cmd+left=previous_tab
+# keybind = cmd+right=next_tab
+# keybind = cmd+alt+1=goto_tab:1           # … goto_tab:9 = cmd+alt+9 (position, not tmux's index)
+
+# Window
+# keybind = cmd+m=minimize
+# keybind = cmd+ctrl+f=toggle_fullscreen
+# keybind = cmd+ctrl+s=toggle_sidebar
+
+# Examples:
+# keybind = cmd+shift+k=switch_session     # ⌘⇧K finds sessions…
+# keybind = cmd+k=unbind                   # …and ⌘K is Ghostty's clear_screen again
+# keybind = cmd+j=previous_session
+# keybind = cmd+l=next_session
+# keybind = ctrl+shift+t=new_tab
+# keybind = f5=reload_config
