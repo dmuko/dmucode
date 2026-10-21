@@ -21,6 +21,7 @@ The package has two targets. `dmucodeCore` (library) holds everything that doesn
 |---|---|
 | [main.swift](../Sources/dmucode/main.swift) | App delegate, startup, loading dmucode's config. |
 | [AppMenu.swift](../Sources/dmucode/AppMenu.swift), [AppConfig.swift](../Sources/dmucodeCore/AppConfig.swift) | The main menu, and the config file whose `keybind`s set its shortcuts. `AppSettings.swift` hands the config's chrome options to the views. |
+| [FullDiskAccess.swift](../Sources/dmucodeCore/FullDiskAccess.swift), [FullDiskAccessPrompt.swift](../Sources/dmucode/FullDiskAccessPrompt.swift) | Whether the app has Full Disk Access, and the sheet that sends the user to System Settings for it. |
 | [MainWindowController.swift](../Sources/dmucode/MainWindowController.swift) | The window: sidebar, tab bar, terminals, palette, theme and fullscreen handling. Also `TerminalContainerController`, which holds one terminal per opened session. |
 | [SessionStore.swift](../Sources/dmucodeCore/SessionStore.swift) | The sidebar's model: sessions, selection, attention markers, recent sessions, the sidebar layout. Owns the control-mode client and falls back to polling. |
 | [TmuxBackend.swift](../Sources/dmucodeCore/TmuxBackend.swift) | The protocols `SessionStore` is written against (see [Testing](#testing)), and the production scheduler. |
@@ -130,6 +131,7 @@ A marker has two sources.
 - **Chrome options:** the rest of the config (`title-bar`, `tabs`, `tab-git-status`, `sidebar-window-count`, `sidebar-shortcuts`) reaches the views through `AppSettings`, an `ObservableObject` the app delegate replaces the config in on each reload, so SwiftUI views observing it redraw. The window controller subscribes for the rest:
   - **Tabs:** `TerminalContainerController.tabBarVisible` hides the tab bar and gives its height to the terminals; the palette's overlay follows. `auto` is decided from the selected session's window count whenever the sessions or the config change.
   - **Git:** with `tab-git-status = false` the controller tracks no directories, so no `git status` runs.
+  - **Full Disk Access:** `FullDiskAccess` (dmucodeCore) can only find out whether the process has it, by opening `TCC.db`, which also lists the app in the System Settings pane; `FullDiskAccessPrompt` (app) shows the sheet, remembers Don't Ask Again in `UserDefaults`, and opens the pane by its `x-apple.systempreferences:` URL. The window controller asks at launch after the config-error sheet, and only when no sheet is up, since a window holds one sheet at a time.
   - **Title bar:** done as Ghostty's `macos-titlebar-style = hidden`. The window keeps `.titled`, for its frame, shadow and resizing, while the title, the traffic lights and `NSTitlebarContainerView` are hidden. The title bar's safe area still exists, so the container ignores it (`ignoresTitleBar`) and the chrome's hosting views and controller (sidebar, tab bar, palette) get `safeAreaRegions = []`, or they would inset their content by the title bar's height; the window becomes movable by its background. Leaving native fullscreen brings the title bar's views back, so it is applied again then.
 
 ## Ghostty configuration

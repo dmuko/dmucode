@@ -16,6 +16,7 @@ import IOSurface
 ///   tab N           select the Nth window tab of the selected session
 ///   newtab          open a new window in the selected session (the + button)
 ///   reload          reload the Ghostty config (state shows the theme and errors)
+///   fda             open the Full Disk Access sheet, as the menu item does
 ///   move FROM TO    drag sidebar row FROM (0-based) to before row TO, as onMove does
 ///   group NAME      create a group; ungroup NAME removes it
 ///   togroup S G     move session S into group G ("-": out of its group)
@@ -63,6 +64,7 @@ enum DebugHooks {
             if let controller = window.windowController as? MainWindowController {
                 lines.append(controller.paletteState)
                 lines.append(controller.themeState)
+                lines.append(controller.fullDiskAccessState)
             }
             if let delegate = NSApp.delegate as? AppDelegate {
                 lines.append("keybinds=" + delegate.menuDebugState)
@@ -115,6 +117,8 @@ enum DebugHooks {
             }
         case "reload":
             GhosttyRuntime.shared.reloadConfig()
+        case "fda":
+            (window.windowController as? MainWindowController)?.showFullDiskAccess(nil)
         case "move":
             let n = arg.split(separator: " ").compactMap { Int($0) }
             if n.count == 2 { store.moveSidebarRow(from: n[0], to: n[1]) }
@@ -194,7 +198,7 @@ enum DebugHooks {
                 windowNumber: window.windowNumber, context: nil,
                 characters: key.char, charactersIgnoringModifiers: key.char,
                 isARepeat: false, keyCode: key.code) else { continue }
-            window.sendEvent(event)
+            (window.attachedSheet ?? window).sendEvent(event)
         }
     }
 

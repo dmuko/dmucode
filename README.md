@@ -188,6 +188,7 @@ sidebar-shortcuts = false
 | `tab-git-status` | `true`, `false` | `true` | The branch and status on the tabs. `false` also stops running git. |
 | `sidebar-window-count` | `true`, `false` | `true` | "3 windows" under each session's name. Notifications are shown there either way. |
 | `sidebar-shortcuts` | `true`, `false` | `true` | The ⌘1 … ⌘9 hints on the sidebar rows. |
+| `full-disk-access-prompt` | `true`, `false` | `true` | Ask for [Full Disk Access](#full-disk-access) at launch while dmucode doesn't have it. |
 
 Booleans accept `true`/`false`, `yes`/`no`, `on`/`off` and `1`/`0`. A repeated option takes its last value.
 
@@ -241,6 +242,14 @@ set -g status off
 ```
 
 If your config sets `default-terminal "xterm-ghostty"` and dmucode starts the tmux server, the server gets a `TERMINFO` that points into the app bundle, so the terminfo entry is found.
+
+### Full Disk Access
+
+macOS keeps programs out of Documents, Desktop, Downloads and other protected folders unless the app they run under is allowed in. Programs in tmux run with the access of the app that started the tmux server, and once that app has quit, some of them fail with "Operation not permitted" without any prompt. So at launch, while it doesn't have it, dmucode asks for Full Disk Access with a sheet that opens System Settings; macOS has no way to request the access directly, so dmucode is turned on by hand under *Privacy & Security → Full Disk Access*, where it's listed once it has asked. With the access, programs in every tmux server dmucode starts can read every folder.
+
+A tmux server started from another terminal has that terminal's access, whatever dmucode has. To cover those too, add tmux itself (`/opt/homebrew/bin/tmux` for Homebrew) to the same list.
+
+*Don't Ask Again* in the sheet, or `full-disk-access-prompt = false` in the [config](#dmucode), stops the asking; *dmucode → Full Disk Access…* shows the sheet any time, also to confirm that the access is there.
 
 ### Restoring sessions after a reboot
 
@@ -314,6 +323,7 @@ Claude Code then sends its message (OSC 9) and a bell. By default (`auto`) it se
 - **Sessions aren't restored after a reboot.**
   - Check that both plugins are installed and that `~/.local/share/tmux/resurrect/last` exists.
   - continuum skips restoring when it thinks another tmux server is running, for example a `tmux -L` server started at login.
+- **"Operation not permitted" in Documents, Desktop or Downloads.** The tmux server was started by an app without access to the folder, or by one that has since quit. Give dmucode and tmux [Full Disk Access](#full-disk-access) and start the server again (`tmux kill-server`, after saving what's in it), or run it under dmucode from the start.
 - **⌘K doesn't clear the screen any more.** It opens the palette; use `clear` or `C-l` in tmux.
 - **`prefix :` opens tmux's prompt, not the palette.** tmux doesn't tell control-mode clients that its prompt opened. Use ⌘: for the palette.
 

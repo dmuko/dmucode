@@ -80,7 +80,7 @@ public struct TmuxError: Error, CustomStringConvertible, Equatable {
 /// Thin wrapper over the tmux CLI. Calls block, so run them off the main thread.
 public struct Tmux {
     /// Absolute path: apps started from Finder don't inherit the shell's PATH.
-    let executable: String
+    public let executable: String
     /// `-L` socket name from DMUCODE_TMUX_SOCKET; nil means the default server.
     public let socketName: String?
 

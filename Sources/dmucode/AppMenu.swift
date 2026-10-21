@@ -12,6 +12,8 @@ final class AppMenu {
         let app = NSMenu()
         // Reloads the dmucode and the Ghostty config; saving either reloads it too.
         add(app, "Reload Config", .reloadConfig, #selector(MainWindowController.reloadConfig(_:)))
+        // No keybind: explains and opens System Settings; see FullDiskAccessPrompt.
+        app.addItem(withTitle: "Full Disk Access…", action: #selector(MainWindowController.showFullDiskAccess(_:)), keyEquivalent: "")
         app.addItem(.separator())
         add(app, "Hide dmucode", .hide, #selector(NSApplication.hide(_:)))
         app.addItem(.separator())
