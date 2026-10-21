@@ -16,6 +16,19 @@
 	<string>0.5.0</string>
 	<key>CFBundleVersion</key>
 	<string>6</string>
+	<!-- dmucode://session/<name> and dmucode://new/<name>?dir=<path>; see
+	     AppURL.swift and the dmucode command in Resources/bin. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.dmuko.dmucode.url</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>dmucode</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>

@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = AppSettings()
     private var config: AppConfig { settings.config }
     private var configWatcher: ConfigWatcher?
+    /// URLs that arrived before the window existed (the app was started by
+    /// one, or tmux is still being looked for).
+    private var pendingURLs: [URL] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let menu = AppMenu()
@@ -58,6 +61,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let window = controller.window { DebugHooks.install(window: window, store: store) }
         NSApp.activate(ignoringOtherApps: true)
         store.start()
+        for url in pendingURLs { open(url) }
+        pendingURLs = []
+    }
+
+    // MARK: dmucode: URLs
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls { open(url) }
+    }
+
+    private func open(_ url: URL) {
+        guard let controller = windowController else {
+            pendingURLs.append(url)
+            return
+        }
+        if let request = AppURL(url) {
+            Log.url.notice("open \(url.absoluteString, privacy: .public)")
+            controller.open(request)
+        } else {
+            Log.url.error("unknown URL \(url.absoluteString, privacy: .public)")
+            NSSound.beep()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

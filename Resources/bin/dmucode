@@ -1,0 +1,56 @@
+#!/bin/bash
+# dmucode: the dmucode app from the command line, through dmucode: URLs.
+#
+#   dmucode show NAME            show the session (dmucode comes to the front)
+#   dmucode new [-c DIR] [NAME]  create a tmux session in DIR (default: the
+#                                current directory) and show it; a session
+#                                that already has the name is shown instead
+#   dmucode url URL              open a dmucode: URL (see the README)
+#
+# A name like agents/claude-1 files the session under the group "agents".
+set -u
+
+usage() { echo "usage:"; sed -n '4,8p' "$0" | sed 's/^#//'; exit 2; }
+
+# Percent-encodes everything but unreserved characters (and "/" when
+# $2 is "path"), byte by byte.
+encode() {
+  local s=$1 keep=${2:-} out="" i c
+  LC_ALL=C
+  for ((i = 0; i < ${#s}; i++)); do
+    c=${s:i:1}
+    case $c in
+      [a-zA-Z0-9.~_-]) out+=$c ;;
+      /) if [ "$keep" = path ]; then out+=$c; else out+=%2F; fi ;;
+      *) out+=$(printf '%%%02X' "$(( $(printf '%d' "'$c") & 255 ))") ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+[ $# -gt 0 ] || usage
+command=$1; shift
+case $command in
+  show)
+    [ $# -eq 1 ] && [ -n "$1" ] || usage
+    url="dmucode://session/$(encode "$1" path)"
+    ;;
+  new)
+    dir=$PWD
+    while getopts "c:" opt; do
+      case $opt in
+        c) dir=$OPTARG ;;
+        *) usage ;;
+      esac
+    done
+    shift $((OPTIND - 1))
+    [ $# -le 1 ] || usage
+    url="dmucode://new/$(encode "${1:-}" path)?dir=$(encode "$dir")"
+    ;;
+  url)
+    [ $# -eq 1 ] || usage
+    url=$1
+    ;;
+  *) usage ;;
+esac
+exec open "$url"

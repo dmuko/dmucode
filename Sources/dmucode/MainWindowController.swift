@@ -438,6 +438,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         })
     }
 
+    /// A `dmucode:` URL (see `AppURL`), from the `dmucode` command or any
+    /// program. The app is brought to the front either way.
+    func open(_ request: AppURL) {
+        switch request {
+        case .show(let name):
+            store.selectSession(named: name)
+        case .new(let name, let directory):
+            store.newSession(name: name, directory: directory ?? FileManager.default.homeDirectoryForCurrentUser.path)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     @objc func renameSelected(_ sender: Any?) {
         guard let session = selectedSession else { return }
         rename(session)
