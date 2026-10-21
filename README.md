@@ -140,6 +140,8 @@ A session that wants attention gets an orange bell in the sidebar. This happens 
 
 Showing the session clears the marker. Nothing is marked for the session you are looking at. The Dock icon shows the number of sessions that want attention.
 
+⌘⇧↓ goes to the next session that wants attention, in sidebar order, and ⌘⇧↑ to the previous one; both wrap around. With several agents running, this walks through the ones waiting for you without looking at the sidebar. When no other session wants attention, the Mac beeps.
+
 While dmucode is in the background, a notification with text is also shown as a macOS notification: the session's name and the text. Clicking it brings dmucode to the front with that session. Showing the session removes the notification. macOS asks for permission the first time the window comes to the front; if you declined, turn dmucode on in System Settings → Notifications. `desktop-notifications = false` in the config turns this off. A plain bell has no text and makes no notification.
 
 For Claude Code, see [Claude Code notifications](#claude-code-notifications).
@@ -155,6 +157,7 @@ The action names are for remapping in the [config file](#dmucode).
 | | Kill the selected session (asks first) | `kill_session` |
 | ⌘1 … ⌘9 | Go to the session at that position in the sidebar | `goto_session:1` … `goto_session:9` |
 | ⌘↓ / ⌘↑ | Next / previous session | `next_session` / `previous_session` |
+| ⌘⇧↓ / ⌘⇧↑ | Next / previous session that wants attention | `next_attention` / `previous_attention` |
 | ⌘K | Palette: find a session, window or pane | `switch_session` |
 | ⌘: | Palette in command mode (tmux command) | `tmux_command` |
 | ⌘T | New tmux window (tab) in the current pane's directory | `new_tab` |

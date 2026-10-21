@@ -294,6 +294,7 @@ public enum KeybindAction: Hashable {
     case copy, paste, selectAll
     case tmuxCommand, switchSession
     case newSession, renameSession, killSession, previousSession, nextSession, gotoSession(Int)
+    case previousAttention, nextAttention
     case newTab, renameTab, closeTab, previousTab, nextTab, gotoTab(Int)
     case minimize, toggleFullscreen, toggleSidebar
 
@@ -303,6 +304,7 @@ public enum KeybindAction: Hashable {
         ("tmux_command", .tmuxCommand), ("switch_session", .switchSession),
         ("new_session", .newSession), ("rename_session", .renameSession), ("kill_session", .killSession),
         ("previous_session", .previousSession), ("next_session", .nextSession),
+        ("previous_attention", .previousAttention), ("next_attention", .nextAttention),
         ("new_tab", .newTab), ("rename_tab", .renameTab), ("close_tab", .closeTab),
         ("previous_tab", .previousTab), ("next_tab", .nextTab),
         ("minimize", .minimize), ("toggle_fullscreen", .toggleFullscreen), ("toggle_sidebar", .toggleSidebar),
@@ -352,6 +354,10 @@ public enum KeybindAction: Hashable {
             // These take the keys from Ghostty's own cmd+arrow bindings.
             .previousSession: KeyTrigger(.command, .up),
             .nextSession: KeyTrigger(.command, .down),
+            // ⌘⇧↑/⌘⇧↓ step through the sessions that want attention. Ghostty
+            // has these for jump_to_prompt too; inside tmux that does nothing.
+            .previousAttention: KeyTrigger([.command, .shift], .up),
+            .nextAttention: KeyTrigger([.command, .shift], .down),
             .newTab: KeyTrigger(.command, "t"),
             // ⌥⌘ for the rest of the tab shortcuts keeps them apart from the
             // session ones.

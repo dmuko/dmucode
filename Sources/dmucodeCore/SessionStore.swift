@@ -228,6 +228,24 @@ public final class SessionStore: ObservableObject {
         alerts[session.id] != nil || session.hasBell
     }
 
+    /// Selects the next (`delta` 1) or previous (-1) session that wants
+    /// attention, in sidebar order from the selected one, wrapping around;
+    /// the selected session itself doesn't count. False when there is none.
+    @discardableResult
+    public func selectAttention(_ delta: Int) -> Bool {
+        let count = sessions.count
+        guard count > 0 else { return false }
+        let current = sessions.firstIndex(where: { $0.id == selectedID }) ?? (delta > 0 ? count - 1 : 0)
+        for step in 1..<count {
+            let session = sessions[((current + delta * step) % count + count) % count]
+            if needsAttention(session) {
+                selectedID = session.id
+                return true
+            }
+        }
+        return false
+    }
+
     // MARK: Windows
 
     /// Makes a window the session's current one. The tab moves right away;

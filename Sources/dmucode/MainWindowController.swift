@@ -456,6 +456,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @objc func selectNextSession(_ sender: Any?) { step(1) }
     @objc func selectPreviousSession(_ sender: Any?) { step(-1) }
+    @objc func selectNextAttention(_ sender: Any?) { if !store.selectAttention(1) { NSSound.beep() } }
+    @objc func selectPreviousAttention(_ sender: Any?) { if !store.selectAttention(-1) { NSSound.beep() } }
 
     private var selectedSession: TmuxSession? { store.selectedSession }
 
