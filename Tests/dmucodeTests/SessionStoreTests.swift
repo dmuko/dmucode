@@ -341,6 +341,54 @@ struct SessionStoreWorkingTests {
     }
 }
 
+struct SessionStoreURLTests {
+    @Test func selectsASessionByName() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a"), session("b")]
+        h.start()
+        h.store.selectSession(named: "b")
+        #expect(h.store.selectedID == "$b")
+        #expect(h.lastSessionName == "b") // a choice, as from the sidebar
+        #expect(h.store.commandError == nil)
+    }
+
+    @Test func aSessionCreatedAMomentAgoIsFoundAfterARefresh() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a")]
+        h.start()
+        h.tmux.sessions = [session("a"), session("b")] // created, not listed yet
+        h.store.selectSession(named: "b")
+        #expect(h.store.selectedID == "$a")
+        h.scheduler.run()
+        #expect(h.store.selectedID == "$b")
+        #expect(h.store.commandError == nil)
+    }
+
+    @Test func anUnknownNameIsACommandError() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a")]
+        h.start()
+        h.store.selectSession(named: "nope")
+        h.scheduler.run()
+        #expect(h.store.selectedID == "$a")
+        #expect(h.store.commandError == "No session named “nope”")
+    }
+
+    @Test func newSessionCreatesAndSelectsOrShowsTheExistingOne() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a"), session("b")]
+        h.start()
+        h.store.newSession(name: "b", directory: "/tmp")
+        #expect(h.store.selectedID == "$b")
+        #expect(h.tmux.calls.isEmpty)
+
+        h.tmux.sessions = [session("a"), session("b"), session("new")]
+        h.store.newSession(name: "c", directory: "/tmp")
+        h.scheduler.run()
+        #expect(h.store.selectedID == "$new")
+    }
+}
+
 struct SessionStoreErrorTests {
     private struct Boom: Error, CustomStringConvertible {
         var description: String

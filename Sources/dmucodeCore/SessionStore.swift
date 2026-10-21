@@ -216,6 +216,34 @@ public final class SessionStore: ObservableObject {
         commandError = nil
     }
 
+    // MARK: URLs (the dmucode command)
+
+    /// Shows the session of that name. If there is none, the list is
+    /// refreshed first, since the session may be a moment old (`tmux new -d
+    /// -s x; dmucode show x`); if there still is none, it's a command error.
+    public func selectSession(named name: String) {
+        if select(named: name) { return }
+        refresh { [weak self] in
+            guard let self, !self.select(named: name) else { return }
+            self.commandError = "No session named “\(name)”"
+        }
+    }
+
+    private func select(named name: String) -> Bool {
+        guard let match = sessions.first(where: { $0.name == name }) else { return false }
+        selectedID = match.id
+        return true
+    }
+
+    /// Creates a session (named by tmux when `name` is nil) in `directory`
+    /// and shows it. A session that already has the name is shown instead.
+    public func newSession(name: String?, directory: String) {
+        if let name, select(named: name) { return }
+        var newID: String?
+        performBackend({ newID = try $0.newSession(name: name, directory: directory) },
+                       then: { [weak self] in if let newID { self?.selectedID = newID } })
+    }
+
     // MARK: Attention
 
     public func raiseAlert(sessionID: String, message: String?) {

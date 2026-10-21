@@ -18,6 +18,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 - **Windows as tabs.** Each tab shows the directory of the window's active pane and, inside a git repository, the branch and whether there are changes, conflicts or unpushed commits.
 - **Working indicator.** A session whose terminal is producing output, such as an agent at work, shows a spinner in the sidebar, so you can see which agents are busy, which are waiting for you, and which are idle.
 - **Attention markers.** A session whose terminal rings the bell or sends a desktop notification (OSC 9/777) gets an orange bell and the notification's text, for example when Claude Code needs permission. The Dock icon shows how many sessions want attention, and while dmucode is in the background the text is also a macOS notification. `notify make test` sends one when a command finishes.
+- **A command line and URLs.** `dmucode show agents/claude-1` brings dmucode to the front with that session, `dmucode new` creates a session in the current directory and shows it, and `dmucode://session/<name>` does the same from Raycast, scripts or anything else that opens URLs.
 - **⌘K palette.**
   - Fuzzy-find any session, window or pane. Panes are found by their title too, where Claude Code writes the topic of its conversation.
   - With [sesh](https://github.com/joshmedeski/sesh) installed, its configured sessions that aren't running are found too, and Return starts one: sesh creates the session in its directory and runs its startup command.
@@ -162,6 +163,28 @@ notify -m 30 cargo build          # only when it took 30 seconds or more
 The session gets the marker with "make test: done in 1 min 12 s", or "failed (exit 2) after …", and a macOS notification while dmucode is in the background. Nothing is sent after Ctrl-C. The command's exit status is passed on. Outside dmucode, the notification is an OSC 9, which Ghostty, iTerm2 and WezTerm show as a desktop notification.
 
 The script is in the app: `/Applications/dmucode.app/Contents/Resources/bin/notify`. Put that directory on your `PATH`, or link the script into one, for example `ln -s /Applications/dmucode.app/Contents/Resources/bin/notify ~/bin/notify`. Inside tmux it needs `allow-passthrough on` (see [tmux](#tmux)).
+
+### The dmucode command and dmucode: URLs
+
+`dmucode` drives the app from a shell, a script or a launcher:
+
+```bash
+dmucode show agents/claude-1      # brings dmucode to the front with that session
+dmucode new                       # a tmux session in the current directory, shown
+dmucode new -c ~/src/api api      # named, in that directory; shown if it already exists
+dmucode url dmucode://session/api # any dmucode: URL
+```
+
+A session created a moment earlier is found too, so `tmux new -d -s api -c ~/src/api && dmucode show api` works. `dmucode show` with a name no session has shows an error under the sidebar. A name like `agents/claude-1` files the new session under the group **agents** (see [Sidebar](#sidebar)).
+
+The command sends a `dmucode:` URL, which anything that opens URLs can send too, for example Raycast, Shortcuts or a sesh hook:
+
+| URL | Effect |
+|---|---|
+| `dmucode://session/<name>` | Shows the session. The name is the URL's path, so `agents/claude-1` needs no encoding; spaces and the like are percent-encoded. |
+| `dmucode://new/<name>?dir=<path>` | Creates the session in `path` (percent-encoded; the home directory if omitted) and shows it, or shows the session if the name is taken. Without a name, tmux names it. |
+
+The script is in the app next to `notify`: `/Applications/dmucode.app/Contents/Resources/bin/dmucode`; link it into a directory on your `PATH` the same way. The URLs are handled by whichever dmucode.app macOS has registered for them, normally the one in /Applications.
 
 ### Keyboard shortcuts
 

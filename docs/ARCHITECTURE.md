@@ -23,6 +23,7 @@ The package has two targets. `dmucodeCore` (library) holds everything that doesn
 | [AppMenu.swift](../Sources/dmucode/AppMenu.swift), [AppConfig.swift](../Sources/dmucodeCore/AppConfig.swift) | The main menu, and the config file whose `keybind`s set its shortcuts. `AppSettings.swift` hands the config's chrome options to the views. |
 | [FullDiskAccess.swift](../Sources/dmucodeCore/FullDiskAccess.swift), [FullDiskAccessPrompt.swift](../Sources/dmucode/FullDiskAccessPrompt.swift) | Whether the app has Full Disk Access, and the sheet that sends the user to System Settings for it. |
 | [DesktopNotifications.swift](../Sources/dmucode/DesktopNotifications.swift) | macOS notifications for programs' notifications while the app is in the background. |
+| [AppURL.swift](../Sources/dmucodeCore/AppURL.swift), [Resources/bin/dmucode](../Resources/bin/dmucode) | `dmucode:` URLs (`session/<name>`, `new/<name>?dir=`) and the `dmucode` command that sends them with `open`. |
 | [Resources/bin/notify](../Resources/bin/notify) | The `notify` command: runs a command and sends OSC 9 + bell when it ends, through tmux passthrough inside tmux. Bundled under Contents/Resources/bin. |
 | [MainWindowController.swift](../Sources/dmucode/MainWindowController.swift) | The window: sidebar, tab bar, terminals, palette, theme and fullscreen handling. Also `TerminalContainerController`, which holds one terminal per opened session. |
 | [SessionStore.swift](../Sources/dmucodeCore/SessionStore.swift) | The sidebar's model: sessions, selection, attention markers, recent sessions, the sidebar layout. Owns the control-mode client and falls back to polling. |
@@ -102,6 +103,10 @@ A marker has two sources.
 ## Working indicator
 
 A second control-mode subscription, `activity`, formats each session's windows' `window_activity`, the time of the window's last output, which tmux keeps without `monitor-activity`. tmux checks a subscription about once a second and sends `%subscription-changed` with the value when it differs, so the value arrives once a second while a window has output and not at all otherwise. `SessionStore.handleActivity` compares each session's part with the previous value: a changed part means output since, and the session goes into `working` for `workingWindow` seconds (3), extended by each further change. The first value sets only the baseline, since a timestamp alone doesn't say whether it is recent. This event doesn't re-list the sessions. `isWorking` excludes the selected session, whose output the user sees and whose typing is output too. Claude Code redraws its spinner while it works, also while it thinks, and is quiet at its prompt, so the indicator follows an agent's state closely.
+
+## URLs and the dmucode command
+
+`CFBundleURLTypes` in Info.plist registers the `dmucode` scheme; `application(_:open:)` in the app delegate receives the URLs, queued until the window exists when one started the app. `AppURL` parses them: the session name is the URL's path (so a group's slash passes through), the directory a query item. `SessionStore.selectSession(named:)` selects a session by name, and when there is none, refreshes the list once before reporting a command error, since `tmux new -d -s x && dmucode show x` can beat the list update. `newSession(name:directory:)` shows an existing session of the name instead of asking tmux, which would refuse the duplicate. The `dmucode` script percent-encodes byte by byte in bash (`LC_ALL=C`), keeping `/` in names, and runs `open`, which also brings the app to the front.
 
 ## The palette
 
