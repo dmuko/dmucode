@@ -76,10 +76,31 @@ public struct ExecutableLookup {
     /// profile. Blocks for up to `timeout` seconds, so call it off the main
     /// thread.
     public func findViaLoginShell(_ name: String, timeout: TimeInterval = 3) -> String? {
-        let shell = environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 }
+        findViaLoginShell(name, shell: loginShell, timeout: timeout)
+    }
+
+    private var loginShell: String {
+        environment["SHELL"].flatMap { $0.isEmpty ? nil : $0 }
             ?? getpwuid(getuid()).flatMap { $0.pointee.pw_shell.map { String(cString: $0) } }
             ?? "/bin/zsh"
-        return findViaLoginShell(name, shell: shell, timeout: timeout)
+    }
+
+    /// The login shell's PATH (`printenv PATH`, which works in every shell),
+    /// for where the user's own commands live. Blocks like
+    /// `findViaLoginShell`; nil on failure.
+    public func loginShellPath(timeout: TimeInterval = 3) -> [String]? {
+        guard isExecutable(loginShell),
+              let output = Self.run(shell: loginShell, arguments: ["-l", "-c", "printenv PATH"], timeout: timeout)
+        else { return nil }
+        return Self.parsePathOutput(output)
+    }
+
+    /// The last line that looks like a PATH, after any banner.
+    static func parsePathOutput(_ output: String) -> [String]? {
+        output.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last { $0.hasPrefix("/") }?
+            .split(separator: ":").map(String.init).filter { $0.hasPrefix("/") }
     }
 
     func findViaLoginShell(_ name: String, shell: String, timeout: TimeInterval) -> String? {

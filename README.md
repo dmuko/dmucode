@@ -162,7 +162,7 @@ notify -m 30 cargo build          # only when it took 30 seconds or more
 
 The session gets the marker with "make test: done in 1 min 12 s", or "failed (exit 2) after …", and a macOS notification while dmucode is in the background. Nothing is sent after Ctrl-C. The command's exit status is passed on. Outside dmucode, the notification is an OSC 9, which Ghostty, iTerm2 and WezTerm show as a desktop notification.
 
-The script is in the app: `/Applications/dmucode.app/Contents/Resources/bin/notify`. Put that directory on your `PATH`, or link the script into one, for example `ln -s /Applications/dmucode.app/Contents/Resources/bin/notify ~/bin/notify`. Inside tmux it needs `allow-passthrough on` (see [tmux](#tmux)).
+The script is in the app: `/Applications/dmucode.app/Contents/Resources/bin/notify`. **dmucode → Install Command Line Tools…** links it, and `dmucode`, into a directory on your `PATH` (see [the next section](#the-dmucode-command-and-dmucode-urls)). Inside tmux it needs `allow-passthrough on` (see [tmux](#tmux)).
 
 ### The dmucode command and dmucode: URLs
 
@@ -184,7 +184,7 @@ The command sends a `dmucode:` URL, which anything that opens URLs can send too,
 | `dmucode://session/<name>` | Shows the session. The name is the URL's path, so `agents/claude-1` needs no encoding; spaces and the like are percent-encoded. |
 | `dmucode://new/<name>?dir=<path>` | Creates the session in `path` (percent-encoded; the home directory if omitted) and shows it, or shows the session if the name is taken. Without a name, tmux names it. |
 
-The script is in the app next to `notify`: `/Applications/dmucode.app/Contents/Resources/bin/dmucode`; link it into a directory on your `PATH` the same way. The URLs are handled by whichever dmucode.app macOS has registered for them, normally the one in /Applications.
+The script is in the app next to `notify`: `/Applications/dmucode.app/Contents/Resources/bin/dmucode`. **dmucode → Install Command Line Tools…** links both into a directory on your login shell's `PATH`: `~/bin`, `~/.local/bin`, `/usr/local/bin` or `/opt/homebrew/bin`, the first that is there and writable (`~/bin` and `~/.local/bin` are created if the `PATH` names them), or one you choose. The links follow the app, so an update needs no reinstall, and a link from an older copy of the app is repointed. Or link them yourself: `ln -s /Applications/dmucode.app/Contents/Resources/bin/{dmucode,notify} ~/bin/`. The URLs are handled by whichever dmucode.app macOS has registered for them, normally the one in /Applications.
 
 ### Keyboard shortcuts
 
