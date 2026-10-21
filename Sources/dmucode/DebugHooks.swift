@@ -18,6 +18,7 @@ import IOSurface
 ///   newtab          open a new window in the selected session (the + button)
 ///   reload          reload the Ghostty config (state shows the theme and errors)
 ///   fda             open the Full Disk Access sheet, as the menu item does
+///   hide            hide the app (⌘H); unhide brings it back
 ///   move FROM TO    drag sidebar row FROM (0-based) to before row TO, as onMove does
 ///   group NAME      create a group; ungroup NAME removes it
 ///   togroup S G     move session S into group G ("-": out of its group)
@@ -70,6 +71,7 @@ enum DebugHooks {
                 lines.append(controller.paletteState)
                 lines.append(controller.themeState)
                 lines.append(controller.fullDiskAccessState)
+                lines.append(controller.notificationState)
             }
             if let delegate = NSApp.delegate as? AppDelegate {
                 lines.append("keybinds=" + delegate.menuDebugState)
@@ -122,6 +124,11 @@ enum DebugHooks {
             }
         case "reload":
             GhosttyRuntime.shared.reloadConfig()
+        case "hide":
+            NSApp.hide(nil)
+        case "unhide":
+            NSApp.unhide(nil)
+            NSApp.activate(ignoringOtherApps: true)
         case "fda":
             (window.windowController as? MainWindowController)?.showFullDiskAccess(nil)
         case "move":

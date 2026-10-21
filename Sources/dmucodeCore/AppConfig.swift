@@ -23,6 +23,9 @@ public struct AppConfig: Equatable {
     /// `full-disk-access-prompt`: ask for Full Disk Access at launch while
     /// it's missing (see `FullDiskAccess`).
     public var fullDiskAccessPrompt = true
+    /// `desktop-notifications`: a macOS notification with a program's
+    /// notification text (OSC 9/777) while dmucode isn't in front.
+    public var desktopNotifications = true
     /// What was skipped: "line 3: unknown action: foo".
     public var errors: [String] = []
 
@@ -39,7 +42,7 @@ public struct AppConfig: Equatable {
     public var settingsDescription: String {
         "title-bar=\(titleBar),tabs=\(tabs.rawValue),tab-git-status=\(tabGitStatus),"
             + "sidebar-window-count=\(sidebarWindowCount),sidebar-shortcuts=\(sidebarShortcuts),"
-            + "full-disk-access-prompt=\(fullDiskAccessPrompt)"
+            + "full-disk-access-prompt=\(fullDiskAccessPrompt),desktop-notifications=\(desktopNotifications)"
     }
 
     // MARK: Location
@@ -99,6 +102,7 @@ public struct AppConfig: Equatable {
             case "sidebar-window-count": bool { config.sidebarWindowCount = $0 }
             case "sidebar-shortcuts": bool { config.sidebarShortcuts = $0 }
             case "full-disk-access-prompt": bool { config.fullDiskAccessPrompt = $0 }
+            case "desktop-notifications": bool { config.desktopNotifications = $0 }
             default:
                 fail("unknown option: \(key)")
             }
