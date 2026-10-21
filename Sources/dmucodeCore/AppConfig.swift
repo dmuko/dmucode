@@ -20,6 +20,9 @@ public struct AppConfig: Equatable {
     public var sidebarWindowCount = true
     /// `sidebar-shortcuts`: the ⌘1…⌘9 hints on the sidebar rows.
     public var sidebarShortcuts = true
+    /// `full-disk-access-prompt`: ask for Full Disk Access at launch while
+    /// it's missing (see `FullDiskAccess`).
+    public var fullDiskAccessPrompt = true
     /// What was skipped: "line 3: unknown action: foo".
     public var errors: [String] = []
 
@@ -35,7 +38,8 @@ public struct AppConfig: Equatable {
     /// The options other than `keybind` and their values, for the debug hook.
     public var settingsDescription: String {
         "title-bar=\(titleBar),tabs=\(tabs.rawValue),tab-git-status=\(tabGitStatus),"
-            + "sidebar-window-count=\(sidebarWindowCount),sidebar-shortcuts=\(sidebarShortcuts)"
+            + "sidebar-window-count=\(sidebarWindowCount),sidebar-shortcuts=\(sidebarShortcuts),"
+            + "full-disk-access-prompt=\(fullDiskAccessPrompt)"
     }
 
     // MARK: Location
@@ -94,6 +98,7 @@ public struct AppConfig: Equatable {
             case "tab-git-status": bool { config.tabGitStatus = $0 }
             case "sidebar-window-count": bool { config.sidebarWindowCount = $0 }
             case "sidebar-shortcuts": bool { config.sidebarShortcuts = $0 }
+            case "full-disk-access-prompt": bool { config.fullDiskAccessPrompt = $0 }
             default:
                 fail("unknown option: \(key)")
             }

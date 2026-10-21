@@ -31,6 +31,16 @@
 # The ⌘1 … ⌘9 hints on the sidebar rows.
 # sidebar-shortcuts = true
 
+# --- Full Disk Access ---
+
+# Ask for Full Disk Access at launch while dmucode doesn't have it (macOS
+# can't be asked for it directly: the sheet explains and opens System
+# Settings). Programs in tmux run with the access of the app that started
+# the tmux server, so without it they can't read Documents, Desktop or
+# Downloads. "Don't Ask Again" in the sheet stops the asking too; dmucode →
+# Full Disk Access… shows it any time.
+# full-disk-access-prompt = true
+
 # --- Keyboard shortcuts ---
 #
 #   keybind = <trigger>=<action>

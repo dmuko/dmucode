@@ -276,6 +276,34 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         alert.beginSheetModal(for: window)
     }
 
+    // MARK: Full Disk Access
+
+    /// Set by the app delegate: the tmux binary, named in the sheet.
+    var tmuxPath = "tmux"
+
+    /// At launch: asks while the access is missing, unless the user or the
+    /// config said not to. Skipped when another sheet (config errors) is up;
+    /// the next launch asks again.
+    func promptForFullDiskAccessIfNeeded() {
+        guard let window, window.attachedSheet == nil,
+              FullDiskAccess.shouldPrompt(config: settings.config, dismissed: FullDiskAccessPrompt.isDismissed,
+                                          granted: FullDiskAccess.isGranted()) else { return }
+        FullDiskAccessPrompt.show(on: window, tmux: tmuxPath, granted: false)
+    }
+
+    /// dmucode → Full Disk Access…: the same sheet any time, also to confirm
+    /// that the access is there.
+    @objc func showFullDiskAccess(_ sender: Any?) {
+        guard let window, window.attachedSheet == nil else { return }
+        FullDiskAccessPrompt.show(on: window, tmux: tmuxPath, granted: FullDiskAccess.isGranted())
+    }
+
+    var fullDiskAccessState: String {
+        "fullDiskAccess=\(FullDiskAccess.isGranted()) dismissed=\(FullDiskAccessPrompt.isDismissed)"
+            + " prompt=\(settings.config.fullDiskAccessPrompt)"
+            + " sheet=\(window?.attachedSheet != nil)"
+    }
+
     var themeState: String {
         let theme = GhosttyRuntime.shared.theme
         func hex(_ color: NSColor) -> String {

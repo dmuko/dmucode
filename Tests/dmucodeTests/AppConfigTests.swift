@@ -111,6 +111,7 @@ struct AppConfigTests {
         tab-git-status = off
         sidebar-window-count = no
         sidebar-shortcuts = 0
+        full-disk-access-prompt = n
         """)
         #expect(config.errors == [])
         #expect(!config.titleBar)
@@ -118,13 +119,16 @@ struct AppConfigTests {
         #expect(!config.tabGitStatus)
         #expect(!config.sidebarWindowCount)
         #expect(!config.sidebarShortcuts)
+        #expect(!config.fullDiskAccessPrompt)
         #expect(config.settingsDescription
-            == "title-bar=false,tabs=auto,tab-git-status=false,sidebar-window-count=false,sidebar-shortcuts=false")
+            == "title-bar=false,tabs=auto,tab-git-status=false,sidebar-window-count=false,sidebar-shortcuts=false,"
+            + "full-disk-access-prompt=false")
     }
 
     @Test func chromeOptionsDefaultToOnAndTheLastValueWins() {
         let defaults = AppConfig()
         #expect(defaults.titleBar && defaults.tabGitStatus && defaults.sidebarWindowCount && defaults.sidebarShortcuts)
+        #expect(defaults.fullDiskAccessPrompt)
         #expect(defaults.tabs == .always)
         let config = AppConfig.parse("tabs = never\ntabs = always\ntitle-bar = false\ntitle-bar = true")
         #expect(config.tabs == .always)
@@ -185,7 +189,7 @@ struct ConfigExampleTests {
             .appendingPathComponent("docs/config.example")
         let text = try String(contentsOf: url, encoding: .utf8)
         // "# keybind = cmd+k=switch_session   # palette…" -> "keybind = cmd+k=switch_session"
-        let pattern = #"^# ((?:keybind|title-bar|tabs|tab-git-status|sidebar-window-count|sidebar-shortcuts) = .*?)(?:\s{2,}#.*)?$"#
+        let pattern = #"^# ((?:keybind|title-bar|tabs|tab-git-status|sidebar-window-count|sidebar-shortcuts|full-disk-access-prompt) = .*?)(?:\s{2,}#.*)?$"#
         let regex = try NSRegularExpression(pattern: pattern)
         var lines: [String] = []
         for line in text.split(separator: "\n") {

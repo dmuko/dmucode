@@ -50,9 +50,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let store = SessionStore(tmux: tmux, templates: Sesh.resolve(tmux: tmux))
         let controller = MainWindowController(store: store, settings: settings)
         controller.reloadAppConfig = { [weak self] in self?.loadConfig() }
+        controller.tmuxPath = tmux.executable
         windowController = controller
         controller.showWindow(nil)
         controller.showConfigErrors(config.errors, of: .dmucode)
+        controller.promptForFullDiskAccessIfNeeded()
         if let window = controller.window { DebugHooks.install(window: window, store: store) }
         NSApp.activate(ignoringOtherApps: true)
         store.start()
