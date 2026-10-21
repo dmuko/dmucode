@@ -95,7 +95,8 @@ enum DebugHooks {
                     "\($0.id)\($0.isActive ? "*" : "")\($0.hasBell ? "!" : "")\($0.hasActivity ? "#" : ""):\($0.name)"
                 }
                 let alert = store.alerts[session.id].map { " alert=\($0.message ?? "bell")" } ?? ""
-                return "\(session.id) \(session.name) windows=[\(windows.joined(separator: ","))] attached=\(session.attachedClients)\(alert)"
+                let working = store.isWorking(session) ? " working" : ""
+                return "\(session.id) \(session.name) windows=[\(windows.joined(separator: ","))] attached=\(session.attachedClients)\(alert)\(working)"
             }
             try? (lines.joined(separator: "\n") + "\n").write(
                 to: URL(fileURLWithPath: dir).appendingPathComponent("\(arg).txt"), atomically: true, encoding: .utf8)

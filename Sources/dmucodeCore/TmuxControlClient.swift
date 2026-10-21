@@ -76,6 +76,11 @@ final class TmuxControlClient {
         // every session.
         send(["refresh-client", "-B",
               "windows::#{S:#{W:#{window_id}=#{window_bell_flag}#{window_activity_flag}#{pane_current_path};}}"])
+        // When each window last had output, per session: the value changes
+        // once a second while something writes to a window, and the store
+        // marks the session as working from that. A comma in the W loop
+        // would start the current window's own format, hence the space.
+        send(["refresh-client", "-B", "activity::#{S:#{session_id}=#{W:#{window_activity} };}"])
 
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "dmucode.tmux-control.heartbeat"))
         timer.schedule(deadline: .now() + Self.heartbeatInterval, repeating: Self.heartbeatInterval)
