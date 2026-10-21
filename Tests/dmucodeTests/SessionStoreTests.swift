@@ -226,6 +226,51 @@ struct SessionStoreAlertTests {
         #expect(!h.store.needsAttention(h.store.sessions[1]))
         #expect(h.store.alerts.isEmpty)
     }
+
+    @Test func stepsThroughTheSessionsWantingAttentionAndWrapsAround() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a"), session("b", bell: true), session("c"), session("d")]
+        h.start()
+        h.store.raiseAlert(sessionID: "$d", message: "hi")
+        #expect(h.store.selectedID == "$a")
+
+        #expect(h.store.selectAttention(1))
+        #expect(h.store.selectedID == "$b")
+        #expect(h.store.selectAttention(1))
+        #expect(h.store.selectedID == "$d")
+        #expect(h.store.selectAttention(1))
+        #expect(h.store.selectedID == "$b")
+
+        #expect(h.store.selectAttention(-1))
+        #expect(h.store.selectedID == "$d")
+    }
+
+    @Test func theSelectedSessionDoesNotCountAsWantingAttention() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a", bell: true), session("b")]
+        h.start()
+        #expect(!h.store.selectAttention(1))
+        #expect(h.store.selectedID == "$a")
+
+        h.store.raiseAlert(sessionID: "$b", message: nil)
+        #expect(h.store.selectAttention(1))
+        #expect(h.store.selectedID == "$b")
+        // The marker clears once the user looks at the session; what's left is "a".
+        h.store.clearAlert(sessionID: "$b")
+        #expect(h.store.selectAttention(1))
+        #expect(h.store.selectedID == "$a")
+    }
+
+    @Test func nothingToSelectWithoutAttention() {
+        let h = StoreHarness()
+        h.start()
+        #expect(!h.store.selectAttention(1)) // no sessions at all
+        h.tmux.sessions = [session("a"), session("b")]
+        h.refresh()
+        #expect(!h.store.selectAttention(1))
+        #expect(!h.store.selectAttention(-1))
+        #expect(h.store.selectedID == "$a")
+    }
 }
 
 struct SessionStoreErrorTests {
