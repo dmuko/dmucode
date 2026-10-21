@@ -14,6 +14,8 @@ final class AppMenu {
         add(app, "Reload Config", .reloadConfig, #selector(MainWindowController.reloadConfig(_:)))
         // No keybind: explains and opens System Settings; see FullDiskAccessPrompt.
         app.addItem(withTitle: "Full Disk Access…", action: #selector(MainWindowController.showFullDiskAccess(_:)), keyEquivalent: "")
+        // Links the dmucode and notify scripts into a directory on the PATH.
+        app.addItem(withTitle: "Install Command Line Tools…", action: #selector(MainWindowController.installCommandLineTools(_:)), keyEquivalent: "")
         app.addItem(.separator())
         add(app, "Hide dmucode", .hide, #selector(NSApplication.hide(_:)))
         app.addItem(.separator())

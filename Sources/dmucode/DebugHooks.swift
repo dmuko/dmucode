@@ -27,6 +27,9 @@ import IOSurface
 ///   palette TEXT    type TEXT into the palette and press Return
 ///   new NAME        create a session (as the New Session button does)
 ///   state NAME      write the sidebar state (live, selection, sessions, keybinds) to NAME.txt
+///   menu TITLE      perform the menu item with that title
+///   clitools [DIR]  link the dmucode and notify scripts into DIR (outcomes in clitools.txt);
+///                   without DIR, the login shell's PATH and the proposed directory
 ///   pixels NAME     write raw RGBA samples of the visible terminal's IOSurface to NAME.txt
 enum DebugHooks {
     private static var timer: Timer?
@@ -100,6 +103,36 @@ enum DebugHooks {
             }
             try? (lines.joined(separator: "\n") + "\n").write(
                 to: URL(fileURLWithPath: dir).appendingPathComponent("\(arg).txt"), atomically: true, encoding: .utf8)
+        case "menu":
+            // Performs the menu item with that title, wherever it is.
+            func find(_ menu: NSMenu) -> NSMenuItem? {
+                for item in menu.items {
+                    if item.title == arg { return item }
+                    if let submenu = item.submenu, let found = find(submenu) { return found }
+                }
+                return nil
+            }
+            if let item = NSApp.mainMenu.flatMap(find), let action = item.action {
+                NSApp.sendAction(action, to: item.target, from: item)
+            }
+        case "clitools":
+            // The install step without the sheets: links into DIR, result in
+            // clitools.txt. Without DIR: the login shell's PATH and the
+            // directory that would be proposed.
+            let lines: [String]
+            if arg.isEmpty {
+                let path = ExecutableLookup().loginShellPath() ?? []
+                let proposed = CommandLineTools.proposedDirectory(path: path, home: NSHomeDirectory(), state: { CommandLineTools.state(of: $0) })
+                lines = ["path=\(path.joined(separator: ":"))", "proposed=\(proposed ?? "-")"]
+            } else {
+                do {
+                    lines = try CommandLineTools.install(CommandLineToolsPrompt.sources, into: arg).map { "\($0.name) \($0.outcome)" }
+                } catch {
+                    lines = ["error \(error)"]
+                }
+            }
+            try? (lines.joined(separator: "\n") + "\n").write(
+                to: URL(fileURLWithPath: dir).appendingPathComponent("clitools.txt"), atomically: true, encoding: .utf8)
         case "pixels":
             var lines: [String] = []
             for terminal in allTerminals(in: window.contentView!) where !terminal.isHidden {

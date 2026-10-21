@@ -315,6 +315,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         FullDiskAccessPrompt.show(on: window, tmux: tmuxPath, granted: FullDiskAccess.isGranted())
     }
 
+    /// dmucode → Install Command Line Tools…
+    @objc func installCommandLineTools(_ sender: Any?) {
+        guard let window, window.attachedSheet == nil else { return }
+        CommandLineToolsPrompt.show(on: window)
+    }
+
     var fullDiskAccessState: String {
         "fullDiskAccess=\(FullDiskAccess.isGranted()) dismissed=\(FullDiskAccessPrompt.isDismissed)"
             + " prompt=\(settings.config.fullDiskAccessPrompt)"
