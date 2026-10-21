@@ -39,6 +39,7 @@ struct SidebarView: View {
                         case .session(let session):
                             SessionRow(session: session, name: store.layout.displayName(ofSession: session.name),
                                        alert: store.alerts[session.id],
+                                       working: store.isWorking(session),
                                        shortcut: settings.config.sidebarShortcuts ? shortcuts[session.id] : nil,
                                        showWindowCount: settings.config.sidebarWindowCount)
                                 .tag(session.id)
@@ -163,6 +164,9 @@ private struct SessionRow: View {
     /// Without the "group/" prefix when under that group.
     let name: String
     let alert: TerminalAlert?
+    /// Output in the last few seconds: shown as a spinner, unless the
+    /// session wants attention.
+    let working: Bool
     let shortcut: Int?
     let showWindowCount: Bool
 
@@ -171,10 +175,21 @@ private struct SessionRow: View {
     var body: some View {
         HStack(spacing: 8) {
             // A bell or a notification (e.g. Claude Code waiting for input)
-            // in a session the user isn't looking at.
-            Image(systemName: wantsAttention ? "bell.fill" : "terminal")
-                .foregroundStyle(wantsAttention ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
-                .frame(width: 18)
+            // in a session the user isn't looking at; a spinner while the
+            // session's terminal has output, e.g. an agent at work.
+            Group {
+                if wantsAttention {
+                    Image(systemName: "bell.fill").foregroundStyle(.orange)
+                } else if working {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.7)
+                        .help("Output in the last few seconds")
+                } else {
+                    Image(systemName: "terminal").foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 18, height: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(name)
                     .lineLimit(1)
