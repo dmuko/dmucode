@@ -257,6 +257,12 @@ final class TerminalView: NSView, NSTextInputClient {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// With `title-bar = false` the window is dragged by its background,
+    /// which AppKit takes to include any view that isn't opaque, such as a
+    /// translucent terminal. Drags here are the terminal's: tmux and vim
+    /// resize their splits with the mouse, and selecting text is a drag.
+    override var mouseDownCanMoveWindow: Bool { false }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         mouseButton(GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, event)
