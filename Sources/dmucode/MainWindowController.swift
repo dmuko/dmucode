@@ -20,6 +20,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     /// (title-bar = false): a hosting view inside that area would otherwise
     /// inset its content by the title bar's height.
     private var setChromeSafeArea: ((_ respects: Bool) -> Void)?
+    private var sidebarCollapsed: NSKeyValueObservation?
     private var cancellables: Set<AnyCancellable> = []
 
     init(store: SessionStore, settings: AppSettings) {
@@ -72,9 +73,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             onKill: { self?.kill($0) },
             onNewGroup: { self?.newGroup(moving: $0) },
             onRenameGroup: { self?.renameGroup($0) }) })
-        setChromeSafeArea = { [weak sidebar, weak tabBar, weak overlay] respects in
+        // The sidebar always respects the title bar's safe area: with the
+        // title bar hidden, the traffic lights sit in that strip.
+        setChromeSafeArea = { [weak tabBar, weak overlay] respects in
             let regions: SafeAreaRegions = respects ? .all : []
-            sidebar?.safeAreaRegions = regions
             tabBar?.safeAreaRegions = regions
             overlay?.safeAreaRegions = regions
         }
@@ -82,6 +84,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 360
         split.addSplitViewItem(sidebarItem)
+        sidebarCollapsed = sidebarItem.observe(\.isCollapsed) { [weak self] _, _ in self?.applyTitleBar() }
         split.addSplitViewItem(NSSplitViewItem(viewController: terminals))
         window.contentViewController = split
         window.setContentSize(NSSize(width: 1100, height: 700))
@@ -319,6 +322,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             + " appearance=\(window?.appearance?.name.rawValue ?? "-")"
             + " errors=\(GhosttyRuntime.shared.configErrors.count) sheet=\(window?.attachedSheet != nil)"
             + " titleBar=\(window?.titleVisibility == .visible) tabBar=\(terminals.tabBarVisible)"
+            + " buttons=\(window?.standardWindowButton(.closeButton).map { !$0.isHidden && $0.window != nil } ?? false)"
+            + " sidebarCollapsed=\(sidebarIsCollapsed)"
             + " terminalTop=\(Int(terminals.view.bounds.height - terminals.terminalFrame.maxY))"
     }
 
@@ -337,35 +342,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         applyTitleBar()
     }
 
-    /// `title-bar = false`, done as Ghostty's `macos-titlebar-style = hidden`:
-    /// the window keeps `.titled` (its frame, shadow and resizing), while the
-    /// title, the traffic lights and the title bar's container are hidden.
-    /// The chrome then ignores the title bar's safe area (which AppKit keeps
-    /// reporting), so the sidebar and the tabs start at the top, and the
-    /// window is dragged by its chrome.
+    /// `title-bar = false`: the title goes, and the traffic lights stay in
+    /// the top strip of the sidebar, as in Finder or Notes. The window keeps
+    /// `.titled` (its frame, shadow and resizing) and the title bar is
+    /// transparent, so the strip shows the sidebar's background. The tabs
+    /// and the terminal then ignore the title bar's safe area (which AppKit
+    /// keeps reporting) and start at the top; with the sidebar collapsed
+    /// they'd sit under the buttons, so they keep the strip then. The window
+    /// is dragged by its chrome.
     /// Not touched in native fullscreen, where there is no title bar anyway.
     private func applyTitleBar() {
         guard let window, !window.styleMask.contains(.fullScreen) else { return }
         let visible = settings.config.titleBar
         window.titleVisibility = visible ? .visible : .hidden
-        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            window.standardWindowButton(button)?.isHidden = !visible
-        }
-        if let frame = window.contentView?.superview,
-           let container = Self.descendant(of: frame, className: "NSTitlebarContainerView") {
-            container.isHidden = !visible
-        }
         window.isMovableByWindowBackground = !visible
-        setChromeSafeArea?(visible)
-        terminals.ignoresTitleBar = !visible
+        let keepsStrip = visible || sidebarIsCollapsed
+        setChromeSafeArea?(keepsStrip)
+        terminals.ignoresTitleBar = !keepsStrip
     }
 
-    private static func descendant(of view: NSView, className: String) -> NSView? {
-        for subview in view.subviews {
-            if subview.className == className { return subview }
-            if let found = descendant(of: subview, className: className) { return found }
-        }
-        return nil
+    private var sidebarIsCollapsed: Bool {
+        (contentViewController as? NSSplitViewController)?.splitViewItems.first?.isCollapsed ?? false
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

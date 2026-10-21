@@ -183,7 +183,7 @@ sidebar-shortcuts = false
 
 | Option | Values | Default | Effect |
 |---|---|---|---|
-| `title-bar` | `true`, `false` | `true` | `false` hides the title bar and the traffic lights, as Ghostty's `macos-titlebar-style = hidden`: the sidebar and the tabs start at the top of the window, which is dragged by its chrome. ⌘Q quits, ⌘M minimizes, ⌃⌘F goes full screen. |
+| `title-bar` | `true`, `false` | `true` | `false` hides the title bar: the traffic lights move into the top of the sidebar, as in Finder, and the tabs start at the top of the window, which is dragged by its chrome. With the sidebar hidden (⌃⌘S) the traffic lights keep a strip above the tabs. |
 | `tabs` | `always`, `auto`, `never` | `always` | When the session's windows are shown as tabs; `auto` shows them once there is more than one window. ⌘T, ⌘← / ⌘→ and ⌥⌘1…9 work either way. |
 | `tab-git-status` | `true`, `false` | `true` | The branch and status on the tabs. `false` also stops running git. |
 | `sidebar-window-count` | `true`, `false` | `true` | "3 windows" under each session's name. Notifications are shown there either way. |
