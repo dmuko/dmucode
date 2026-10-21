@@ -174,3 +174,48 @@ struct AppConfigTests {
         #expect(config.keybinds == [Keybind(trigger: KeyTrigger([.command, .shift], "n"), action: .newSession)])
     }
 }
+
+struct ConfigExampleTests {
+    /// docs/config.example lists every option as a comment; uncommented,
+    /// each line must parse, and the keybind lines must restate the
+    /// defaults (the example is what users copy).
+    @Test func exampleParsesAndMatchesTheDefaults() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("docs/config.example")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        // "# keybind = cmd+k=switch_session   # palette…" -> "keybind = cmd+k=switch_session"
+        let pattern = #"^# ((?:keybind|title-bar|tabs|tab-git-status|sidebar-window-count|sidebar-shortcuts) = .*?)(?:\s{2,}#.*)?$"#
+        let regex = try NSRegularExpression(pattern: pattern)
+        var lines: [String] = []
+        for line in text.split(separator: "\n") {
+            let line = String(line)
+            if let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+               let range = Range(match.range(at: 1), in: line) {
+                lines.append(String(line[range]))
+            }
+        }
+        #expect(lines.count > 30)
+        let config = AppConfig.parse(lines.joined(separator: "\n"))
+        #expect(config.errors == [])
+        // The chrome options as written are the defaults.
+        var chrome = config
+        chrome.keybinds = []
+        #expect(chrome == AppConfig())
+        // The default keybind lines (before the examples) restate every default.
+        let defaultsSection = text.components(separatedBy: "# Examples:")[0]
+        let defaultLines = defaultsSection.split(separator: "\n").compactMap { line -> String? in
+            let line = String(line)
+            guard let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+                  let range = Range(match.range(at: 1), in: line), line.contains("keybind") else { return nil }
+            return String(line[range])
+        }
+        let restated = AppConfig.parse(defaultLines.joined(separator: "\n"))
+        #expect(restated.errors == [])
+        for keybind in restated.keybinds {
+            let action = try #require(keybind.action)
+            #expect(KeybindAction.defaults[action] == keybind.trigger, Comment(rawValue: action.name))
+        }
+        #expect(restated.keybinds.count == KeybindAction.defaults.count - 16) // goto_session/goto_tab 2…9 are "…"
+    }
+}

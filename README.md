@@ -173,7 +173,7 @@ The action names are for remapping in the [config file](#dmucode).
 
 ### dmucode
 
-dmucode reads `~/.config/dmucode/config` (`$XDG_CONFIG_HOME/dmucode/config` if that is set, or the file named by `DMUCODE_CONFIG`). The syntax is Ghostty's: one `key = value` per line, `#` starts a comment. The file is optional. Saving it applies the changes, as does ⇧⌘, (*Reload Config*), and lines with errors are skipped and listed in a sheet while the rest applies.
+dmucode reads `~/.config/dmucode/config` (`$XDG_CONFIG_HOME/dmucode/config` if that is set, or the file named by `DMUCODE_CONFIG`). The syntax is Ghostty's: one `key = value` per line, `#` starts a comment. The file is optional. Saving it applies the changes, as does ⇧⌘, (*Reload Config*), and lines with errors are skipped and listed in a sheet while the rest applies. [docs/config.example](docs/config.example) lists every option with its default, as comments, and can be copied as a starting point.
 
 ```
 title-bar = false
