@@ -37,6 +37,9 @@ final class AppMenu {
         session.addItem(.separator())
         add(session, "Previous Session", .previousSession, #selector(MainWindowController.selectPreviousSession(_:)))
         add(session, "Next Session", .nextSession, #selector(MainWindowController.selectNextSession(_:)))
+        // The sessions with a bell or a notification, e.g. agents waiting for input.
+        add(session, "Previous Session Wanting Attention", .previousAttention, #selector(MainWindowController.selectPreviousAttention(_:)))
+        add(session, "Next Session Wanting Attention", .nextAttention, #selector(MainWindowController.selectNextAttention(_:)))
         session.addItem(.separator())
         for i in 1...9 {
             add(session, "Session \(i)", .gotoSession(i), #selector(MainWindowController.selectSessionByTag(_:))).tag = i

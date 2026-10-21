@@ -101,6 +101,7 @@ struct AppConfigTests {
         keybind = cmd+j=previous_session
         """).keybindings
         #expect(bindings[.previousSession] == KeyTrigger(.command, "j"))
+        #expect(bindings[.nextAttention] == KeyTrigger([.command, .shift], .down))
         #expect(bindings[.nextSession] == nil)
     }
 

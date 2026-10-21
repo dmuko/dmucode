@@ -16,6 +16,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 - **Live session sidebar.** dmucode keeps a tmux control-mode connection, so new, renamed and closed sessions show up immediately, without polling.
 - **Ghostty terminals.** Each session gets its own libghostty surface with your `~/.config/ghostty/config`: fonts, themes, background opacity and blur. Saving the config applies it right away.
 - **Windows as tabs.** Each tab shows the directory of the window's active pane and, inside a git repository, the branch and whether there are changes, conflicts or unpushed commits.
+- **Working indicator.** A session whose terminal is producing output, such as an agent at work, shows a spinner in the sidebar, so you can see which agents are busy, which are waiting for you, and which are idle.
 - **Attention markers.** A session whose terminal rings the bell or sends a desktop notification (OSC 9/777) gets an orange bell and the notification's text, for example when Claude Code needs permission. The Dock icon shows how many sessions want attention, and while dmucode is in the background the text is also a macOS notification. `notify make test` sends one when a command finishes.
 - **⌘K palette.**
   - Fuzzy-find any session, window or pane. Panes are found by their title too, where Claude Code writes the topic of its conversation.
@@ -82,6 +83,7 @@ open /Applications/dmucode.app
 ### Sidebar
 
 - **Row contents:** each row shows the session's name and its number of windows. A green dot means a terminal is attached to it: dmucode's own once you have opened the session, or one elsewhere. A gray dot means activity in a window, if you use `monitor-activity on` in tmux.
+- **Working indicator:** the terminal icon becomes a spinner while something in the session writes to its terminal, and goes back a few seconds after the output stops. An agent shows it while it works, including while it thinks, and loses it when it waits for you, which is when the bell appears. The selected session never shows it. Nothing needs to be configured in tmux.
 - **Live indicator:** the dot in the sidebar header is green while updates arrive live over control mode, and gray while dmucode polls because there is no session to connect to yet.
 - **Context menu:** right-click a session for **Rename…**, **Move to Group** and **Kill Session…**. Right-click a group header for **Hide Sessions** / **Show Sessions**, **Rename Group…** and **Remove Group**; removing a group keeps its sessions, ungrouped.
 - **Hiding a group:** click a group header to hide its sessions, as clicking the **tmux** header hides them all, and click it again to show them. A hidden group shows how many sessions it holds, a bell when one of them wants attention, and its name in white while the selected session is among them. The hidden sessions keep their ⌘1 … ⌘9 numbers and their places in ⌘↑ / ⌘↓ and ⌘K. Which groups are hidden is remembered with the layout.
@@ -140,6 +142,8 @@ A session that wants attention gets an orange bell in the sidebar. This happens 
 
 Showing the session clears the marker. Nothing is marked for the session you are looking at. The Dock icon shows the number of sessions that want attention.
 
+⌘⇧↓ goes to the next session that wants attention, in sidebar order, and ⌘⇧↑ to the previous one; both wrap around. With several agents running, this walks through the ones waiting for you without looking at the sidebar. When no other session wants attention, the Mac beeps.
+
 While dmucode is in the background, a notification with text is also shown as a macOS notification: the session's name and the text. Clicking it brings dmucode to the front with that session. Showing the session removes the notification. macOS asks for permission the first time the window comes to the front; if you declined, turn dmucode on in System Settings → Notifications. `desktop-notifications = false` in the config turns this off. A plain bell has no text and makes no notification.
 
 For Claude Code, see [Claude Code notifications](#claude-code-notifications).
@@ -170,6 +174,7 @@ The action names are for remapping in the [config file](#dmucode).
 | | Kill the selected session (asks first) | `kill_session` |
 | ⌘1 … ⌘9 | Go to the session at that position in the sidebar | `goto_session:1` … `goto_session:9` |
 | ⌘↓ / ⌘↑ | Next / previous session | `next_session` / `previous_session` |
+| ⌘⇧↓ / ⌘⇧↑ | Next / previous session that wants attention | `next_attention` / `previous_attention` |
 | ⌘K | Palette: find a session, window or pane | `switch_session` |
 | ⌘: | Palette in command mode (tmux command) | `tmux_command` |
 | ⌘T | New tmux window (tab) in the current pane's directory | `new_tab` |

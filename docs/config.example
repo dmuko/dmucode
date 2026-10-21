@@ -87,6 +87,8 @@
 # keybind = cmd+r=rename_session
 # keybind = cmd+up=previous_session
 # keybind = cmd+down=next_session
+# keybind = cmd+shift+up=previous_attention  # the sessions with a bell or a notification
+# keybind = cmd+shift+down=next_attention
 # keybind = cmd+1=goto_session:1           # … goto_session:9 = cmd+9
 # kill_session has no default shortcut: e.g. keybind = cmd+shift+w=kill_session
 

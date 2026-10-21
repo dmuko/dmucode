@@ -226,6 +226,119 @@ struct SessionStoreAlertTests {
         #expect(!h.store.needsAttention(h.store.sessions[1]))
         #expect(h.store.alerts.isEmpty)
     }
+
+    @Test func stepsThroughTheSessionsWantingAttentionAndWrapsAround() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a"), session("b", bell: true), session("c"), session("d")]
+        h.start()
+        h.store.raiseAlert(sessionID: "$d", message: "hi")
+        #expect(h.store.selectedID == "$a")
+
+        #expect(h.store.selectAttention(1))
+        #expect(h.store.selectedID == "$b")
+        #expect(h.store.selectAttention(1))
+        #expect(h.store.selectedID == "$d")
+        #expect(h.store.selectAttention(1))
+        #expect(h.store.selectedID == "$b")
+
+        #expect(h.store.selectAttention(-1))
+        #expect(h.store.selectedID == "$d")
+    }
+
+    @Test func theSelectedSessionDoesNotCountAsWantingAttention() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a", bell: true), session("b")]
+        h.start()
+        #expect(!h.store.selectAttention(1))
+        #expect(h.store.selectedID == "$a")
+
+        h.store.raiseAlert(sessionID: "$b", message: nil)
+        #expect(h.store.selectAttention(1))
+        #expect(h.store.selectedID == "$b")
+        // The marker clears once the user looks at the session; what's left is "a".
+        h.store.clearAlert(sessionID: "$b")
+        #expect(h.store.selectAttention(1))
+        #expect(h.store.selectedID == "$a")
+    }
+
+    @Test func nothingToSelectWithoutAttention() {
+        let h = StoreHarness()
+        h.start()
+        #expect(!h.store.selectAttention(1)) // no sessions at all
+        h.tmux.sessions = [session("a"), session("b")]
+        h.refresh()
+        #expect(!h.store.selectAttention(1))
+        #expect(!h.store.selectAttention(-1))
+        #expect(h.store.selectedID == "$a")
+    }
+}
+
+struct SessionStoreWorkingTests {
+    private func activity(_ h: StoreHarness, _ value: String) {
+        h.control!.notify("%subscription-changed", ["activity", "$a", "-", "-", "-", ":"] + value.split(separator: " ").map(String.init))
+        h.scheduler.run()
+    }
+
+    @Test func outputMarksTheSessionAsWorkingForAFewSeconds() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a"), session("b")]
+        h.start()
+        let lists = h.control!.listCount
+
+        // The first value only sets the baseline.
+        activity(h, "$a=100 ;$b=200 ;")
+        #expect(h.store.working.isEmpty)
+        activity(h, "$a=100 ;$b=201 ;")
+        #expect(h.store.working == ["$b"])
+        #expect(h.store.isWorking(h.store.sessions[1]))
+        #expect(!h.store.isWorking(h.store.sessions[0]))
+        // No session listing for activity alone.
+        #expect(h.control!.listCount == lists)
+
+        h.scheduler.run(for: 2)
+        #expect(h.store.working == ["$b"])
+        activity(h, "$a=100 ;$b=203 ;") // more output extends it
+        h.scheduler.run(for: 2)
+        #expect(h.store.working == ["$b"])
+        h.scheduler.run(for: 1.1)
+        #expect(h.store.working.isEmpty)
+    }
+
+    @Test func theSelectedSessionIsNeverShownAsWorking() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a"), session("b")]
+        h.start()
+        activity(h, "$a=100 ;$b=200 ;")
+        activity(h, "$a=101 ;$b=201 ;")
+        #expect(h.store.working == ["$a", "$b"])
+        #expect(!h.store.isWorking(h.store.sessions[0])) // selected
+        #expect(h.store.isWorking(h.store.sessions[1]))
+    }
+
+    @Test func aSessionNewToTheValueIsNotWorkingAndVanishedOnesArePruned() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a"), session("b")]
+        h.start()
+        activity(h, "$a=100 ;")
+        activity(h, "$a=100 ;$b=200 ;")
+        #expect(h.store.working.isEmpty)
+        activity(h, "$a=100 ;$b=201 ;")
+        #expect(h.store.working == ["$b"])
+
+        h.tmux.sessions = [session("a")]
+        h.refresh()
+        #expect(h.store.working.isEmpty)
+    }
+
+    @Test func theWindowsSubscriptionStillRefreshes() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a")]
+        h.start()
+        let lists = h.control!.listCount
+        h.control!.notify("%subscription-changed", ["windows", "$a", "-", "-", "-", ":", "@a=00/;"])
+        h.scheduler.run(for: 0.1)
+        #expect(h.control!.listCount == lists + 1)
+    }
 }
 
 struct SessionStoreErrorTests {

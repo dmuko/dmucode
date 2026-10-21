@@ -50,6 +50,9 @@ public final class SessionStore: ObservableObject {
     /// or a desktop notification such as Claude Code waiting for input
     /// (its text, if any). tmux's own bell flags are on the windows.
     @Published public private(set) var alerts: [String: TerminalAlert] = [:]
+    /// Sessions with terminal output in the last few seconds (from the
+    /// activity subscription), for example an agent at work. See `isWorking`.
+    @Published public private(set) var working: Set<String> = []
 
     /// A tmux client moved to another session (prefix s, switch-client...):
     /// the client's tty and the new session id.
@@ -226,6 +229,69 @@ public final class SessionStore: ObservableObject {
 
     public func needsAttention(_ session: TmuxSession) -> Bool {
         alerts[session.id] != nil || session.hasBell
+    }
+
+    // MARK: Working
+
+    /// How long a session stays marked as working after its last output.
+    static let workingWindow: TimeInterval = 3
+
+    /// The session had output in the last few seconds. Never the selected
+    /// one: the user sees that terminal, and their own typing is output too.
+    public func isWorking(_ session: TmuxSession) -> Bool {
+        session.id != selectedID && working.contains(session.id)
+    }
+
+    /// The last value of the activity subscription, by session id.
+    private var lastActivity: [String: String] = [:]
+    /// Bumped for each mark, so the clearing scheduled by an earlier mark
+    /// doesn't clear a later one.
+    private var workingMarks: [String: Int] = [:]
+
+    /// The activity subscription's value: "$1=1792598635 1792598640 ;$2=…".
+    /// A session whose part changed had output since the last value. The
+    /// first value says nothing: a timestamp alone doesn't tell if it's
+    /// recent, and the clock isn't ours.
+    private func handleActivity(_ value: String) {
+        var current: [String: String] = [:]
+        for entry in value.split(separator: ";") {
+            let parts = entry.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            if parts.count == 2 { current[String(parts[0])] = String(parts[1]) }
+        }
+        let previous = lastActivity
+        lastActivity = current
+        for (id, times) in current where previous[id] != nil && previous[id] != times {
+            markWorking(id)
+        }
+    }
+
+    private func markWorking(_ id: String) {
+        let mark = (workingMarks[id] ?? 0) + 1
+        workingMarks[id] = mark
+        working.insert(id)
+        scheduler.after(Self.workingWindow) { [weak self] in
+            guard let self, self.workingMarks[id] == mark else { return }
+            self.working.remove(id)
+            self.workingMarks[id] = nil
+        }
+    }
+
+    /// Selects the next (`delta` 1) or previous (-1) session that wants
+    /// attention, in sidebar order from the selected one, wrapping around;
+    /// the selected session itself doesn't count. False when there is none.
+    @discardableResult
+    public func selectAttention(_ delta: Int) -> Bool {
+        let count = sessions.count
+        guard count > 0 else { return false }
+        let current = sessions.firstIndex(where: { $0.id == selectedID }) ?? (delta > 0 ? count - 1 : 0)
+        for step in 1..<count {
+            let session = sessions[((current + delta * step) % count + count) % count]
+            if needsAttention(session) {
+                selectedID = session.id
+                return true
+            }
+        }
+        return false
     }
 
     // MARK: Windows
@@ -429,6 +495,13 @@ public final class SessionStore: ObservableObject {
             sessions[index] = TmuxSession(id: old.id, name: newName, windows: old.windows,
                                           attachedClients: old.attachedClients)
         }
+        if name == "%subscription-changed", args.first == "activity" {
+            // "activity $id - - - : value"
+            if let colon = args.firstIndex(of: ":") {
+                handleActivity(args[(colon + 1)...].joined(separator: " "))
+            }
+            return
+        }
         if Self.listEvents.contains(name) {
             scheduleRefresh()
         }
@@ -479,6 +552,7 @@ public final class SessionStore: ObservableObject {
             if sessions != self.sessions { self.sessions = sessions }
             let ids = Set(sessions.map(\.id))
             if alerts.keys.contains(where: { !ids.contains($0) }) { alerts = alerts.filter { ids.contains($0.key) } }
+            if working.contains(where: { !ids.contains($0) }) { working = working.filter { ids.contains($0) } }
             recentIDs.removeAll { !ids.contains($0) }
             fixSelection()
         case .failure(let error):
