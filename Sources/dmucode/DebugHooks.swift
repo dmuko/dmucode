@@ -13,6 +13,7 @@ import IOSurface
 ///   key MODS+KEY    run the menu item with that shortcut (e.g. key cmd+right)
 ///   press KEY       synthesize up, down, escape, tab or backspace
 ///   click X Y       click at X,Y points from the window's top-left corner
+///   drag X1 Y1 X2 Y2 [shift]  drag between two such points, e.g. a selection
 ///   select N        select the Nth session in the sidebar
 ///   tab N           select the Nth window tab of the selected session
 ///   newtab          open a new window in the selected session (the + button)
@@ -59,6 +60,10 @@ enum DebugHooks {
         case "click":
             let n = arg.split(separator: " ").compactMap { Double($0) }
             if n.count == 2 { click(x: n[0], y: n[1], window: window) }
+        case "drag":
+            let parts = arg.split(separator: " ").map(String.init)
+            let n = parts.compactMap { Double($0) }
+            if n.count == 4 { drag(from: NSPoint(x: n[0], y: n[1]), to: NSPoint(x: n[2], y: n[3]), shift: parts.contains("shift"), window: window) }
         case "select":
             if let n = Int(arg), store.sessions.indices.contains(n - 1) {
                 store.selectedID = store.sessions[n - 1].id
@@ -195,6 +200,29 @@ enum DebugHooks {
                 eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0) else { continue }
             window.sendEvent(event)
         }
+    }
+
+    /// A left-button drag between two points (top-left origin), in steps,
+    /// optionally with shift held, as a selection in the terminal.
+    private static func drag(from: NSPoint, to: NSPoint, shift: Bool, window: NSWindow) {
+        let flags: NSEvent.ModifierFlags = shift ? .shift : []
+        func send(_ type: NSEvent.EventType, _ p: NSPoint) {
+            let point = NSPoint(x: p.x, y: window.frame.height - p.y)
+            guard let event = NSEvent.mouseEvent(
+                with: type, location: point, modifierFlags: flags,
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) else { return }
+            window.sendEvent(event)
+        }
+        // The pointer arrives before the press, as it does for a user.
+        send(.mouseMoved, from)
+        send(.leftMouseDown, from)
+        for i in 1...10 {
+            let t = Double(i) / 10
+            send(.leftMouseDragged, NSPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t))
+        }
+        send(.leftMouseUp, to)
     }
 
     private static func press(_ name: String, window: NSWindow) {

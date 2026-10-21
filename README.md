@@ -141,6 +141,16 @@ Showing the session clears the marker. Nothing is marked for the session you are
 
 For Claude Code, see [Claude Code notifications](#claude-code-notifications).
 
+### Copying text
+
+Three layers can own a mouse drag, and each copies differently:
+
+- **tmux**, with `set -g mouse on`: a drag selects in tmux's copy mode and the text is copied when the button is released. tmux sends it to dmucode with OSC 52, which writes the clipboard. Across panes, tmux selects within one pane.
+- **A program that takes the mouse**, such as vim with `set mouse=a`: the drag is the program's. vim only selects; what it yanks goes to the clipboard with `set clipboard=unnamed`.
+- **Ghostty's own selection** with **Shift held** while dragging, whatever tmux or the program wants (Ghostty's `mouse-shift-capture`). On macOS Ghostty doesn't copy a selection by itself: **⌘C** copies it, or `copy-on-select = clipboard` in the Ghostty config copies it at once, as tmux does. This selection is of the screen, so it crosses pane borders.
+
+Programs that copy with OSC 52 themselves (Neovim's clipboard over SSH, for example) are dropped by tmux's default `set-clipboard external`; `set -s set-clipboard on` passes them on, and dmucode accepts them. `pbcopy` works inside tmux either way.
+
 ### Keyboard shortcuts
 
 The action names are for remapping in the [config file](#dmucode).
@@ -233,6 +243,9 @@ dmucode works with your existing tmux configuration. A few settings make it work
 # Lets notifications (OSC 9/777) from programs in tmux reach dmucode.
 set -g allow-passthrough on
 
+# Optional: also pass on the clipboard writes (OSC 52) of programs in tmux.
+set -s set-clipboard on
+
 # Optional: a dot in the sidebar and on tabs for windows with new output.
 setw -g monitor-activity on
 
@@ -324,6 +337,7 @@ Claude Code then sends its message (OSC 9) and a bell. By default (`auto`) it se
   - Check that both plugins are installed and that `~/.local/share/tmux/resurrect/last` exists.
   - continuum skips restoring when it thinks another tmux server is running, for example a `tmux -L` server started at login.
 - **"Operation not permitted" in Documents, Desktop or Downloads.** The tmux server was started by an app without access to the folder, or by one that has since quit. Give dmucode and tmux [Full Disk Access](#full-disk-access) and start the server again (`tmux kill-server`, after saving what's in it), or run it under dmucode from the start.
+- **Copying with the mouse is inconsistent.** It depends on who owns the drag; see [Copying text](#copying-text). Shift+drag and ⌘C always work.
 - **⌘K doesn't clear the screen any more.** It opens the palette; use `clear` or `C-l` in tmux.
 - **`prefix :` opens tmux's prompt, not the palette.** tmux doesn't tell control-mode clients that its prompt opened. Use ⌘: for the palette.
 

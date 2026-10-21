@@ -325,6 +325,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             + " buttons=\(window?.standardWindowButton(.closeButton).map { !$0.isHidden && $0.window != nil } ?? false)"
             + " sidebarCollapsed=\(sidebarIsCollapsed)"
             + " terminalTop=\(Int(terminals.view.bounds.height - terminals.terminalFrame.maxY))"
+            + " terminalLeft=\(Int(terminals.view.convert(terminals.terminalFrame, to: nil).minX))"
     }
 
     private static func effectViews(in view: NSView) -> [String] {
