@@ -1,0 +1,69 @@
+#!/bin/bash
+# notify: run a command and send a terminal notification when it ends, as
+# `time` reports how long it took.
+#
+#   notify [-t TITLE] [-m SECONDS] COMMAND [ARG...]
+#   notify [-t TITLE] [-m SECONDS] 'COMMAND LINE'     # one argument: run by your shell
+#
+# The notification is OSC 9 (the title and "done in 12 s" or "failed (exit
+# 2) after 12 s") followed by a bell, written to the terminal; inside tmux
+# the OSC 9 goes through passthrough (allow-passthrough on). dmucode marks
+# the session and, while it's in the background, shows a macOS
+# notification; other terminals show OSC 9 their own way. Nothing is sent
+# when the command is interrupted with Ctrl-C.
+#
+#   -t TITLE    instead of the command line (cut to 60 characters)
+#   -m SECONDS  notify only when the command took at least this long
+set -u
+
+title="" min=0
+while getopts "t:m:h" opt; do
+  case $opt in
+    t) title=$OPTARG ;;
+    m) min=$OPTARG ;;
+    *) sed -n '5,6p' "$0" | sed 's/^#  */usage: /'; exit 2 ;;
+  esac
+done
+shift $((OPTIND - 1))
+[ $# -gt 0 ] || { sed -n '5,6p' "$0" | sed 's/^#  */usage: /'; exit 2; }
+
+if [ -z "$title" ]; then
+  title=$*
+  [ ${#title} -le 60 ] || title="${title:0:59}…"
+fi
+
+start=$(date +%s)
+if [ $# -eq 1 ]; then
+  "${SHELL:-/bin/sh}" -c "$1"
+else
+  "$@"
+fi
+status=$?
+seconds=$(( $(date +%s) - start ))
+
+[ $status -ne 130 ] || exit $status           # Ctrl-C: the user is there
+[ "$seconds" -ge "$min" ] || exit $status
+
+if [ "$seconds" -ge 3600 ]; then
+  took="$((seconds / 3600)) h $((seconds % 3600 / 60)) min"
+elif [ "$seconds" -ge 60 ]; then
+  took="$((seconds / 60)) min $((seconds % 60)) s"
+else
+  took="$seconds s"
+fi
+if [ $status -eq 0 ]; then
+  message="done in $took"
+else
+  message="failed (exit $status) after $took"
+fi
+
+osc=$(printf '\033]9;%s: %s\007' "$title" "$message")
+if [ -n "${TMUX:-}" ]; then
+  # tmux passthrough: ESC doubled inside DCS tmux; ... ST.
+  osc=$(printf '\033Ptmux;%s\033\\' "${osc//$'\033'/$'\033\033'}")
+fi
+# To the terminal even when the output is redirected; stderr without one.
+{ exec 3>/dev/tty; } 2>/dev/null || exec 3>&2
+printf '%s\007' "$osc" >&3
+echo "notify: $title: $message" >&2
+exit $status

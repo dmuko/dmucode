@@ -16,7 +16,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 - **Live session sidebar.** dmucode keeps a tmux control-mode connection, so new, renamed and closed sessions show up immediately, without polling.
 - **Ghostty terminals.** Each session gets its own libghostty surface with your `~/.config/ghostty/config`: fonts, themes, background opacity and blur. Saving the config applies it right away.
 - **Windows as tabs.** Each tab shows the directory of the window's active pane and, inside a git repository, the branch and whether there are changes, conflicts or unpushed commits.
-- **Attention markers.** A session whose terminal rings the bell or sends a desktop notification (OSC 9/777) gets an orange bell and the notification's text, for example when Claude Code needs permission. The Dock icon shows how many sessions want attention, and while dmucode is in the background the text is also a macOS notification.
+- **Attention markers.** A session whose terminal rings the bell or sends a desktop notification (OSC 9/777) gets an orange bell and the notification's text, for example when Claude Code needs permission. The Dock icon shows how many sessions want attention, and while dmucode is in the background the text is also a macOS notification. `notify make test` sends one when a command finishes.
 - **⌘K palette.**
   - Fuzzy-find any session, window or pane. Panes are found by their title too, where Claude Code writes the topic of its conversation.
   - With [sesh](https://github.com/joshmedeski/sesh) installed, its configured sessions that aren't running are found too, and Return starts one: sesh creates the session in its directory and runs its startup command.
@@ -143,6 +143,21 @@ Showing the session clears the marker. Nothing is marked for the session you are
 While dmucode is in the background, a notification with text is also shown as a macOS notification: the session's name and the text. Clicking it brings dmucode to the front with that session. Showing the session removes the notification. macOS asks for permission the first time the window comes to the front; if you declined, turn dmucode on in System Settings → Notifications. `desktop-notifications = false` in the config turns this off. A plain bell has no text and makes no notification.
 
 For Claude Code, see [Claude Code notifications](#claude-code-notifications).
+
+### Notifying when a command finishes
+
+`notify` runs a command and sends a notification when it ends, as `time` reports how long it took:
+
+```bash
+notify make test
+notify -t "deploy" ./deploy.sh --prod
+notify 'make && make test'        # one argument: run by your shell
+notify -m 30 cargo build          # only when it took 30 seconds or more
+```
+
+The session gets the marker with "make test: done in 1 min 12 s", or "failed (exit 2) after …", and a macOS notification while dmucode is in the background. Nothing is sent after Ctrl-C. The command's exit status is passed on. Outside dmucode, the notification is an OSC 9, which Ghostty, iTerm2 and WezTerm show as a desktop notification.
+
+The script is in the app: `/Applications/dmucode.app/Contents/Resources/bin/notify`. Put that directory on your `PATH`, or link the script into one, for example `ln -s /Applications/dmucode.app/Contents/Resources/bin/notify ~/bin/notify`. Inside tmux it needs `allow-passthrough on` (see [tmux](#tmux)).
 
 ### Keyboard shortcuts
 
