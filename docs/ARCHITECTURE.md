@@ -90,8 +90,10 @@ A marker has two sources.
 
 **Claude Code:**
 
-- **Default (`auto`):** Claude Code recognizes Ghostty inside tmux from `TERM=xterm-ghostty` (tmux's `default-terminal`) and sends OSC 777 through tmux passthrough, which needs `allow-passthrough on`. That reaches dmucode only while Claude is in the session's current window, and only for sessions opened in dmucode.
+- **Default (`auto`):** Claude Code recognizes Ghostty inside tmux from `TERM=xterm-ghostty` (tmux's `default-terminal`) and sends OSC 777 through tmux passthrough, which needs `allow-passthrough on`. That reaches dmucode only while Claude is in the session's current window, and only for sessions opened in dmucode. With another `TERM` it sends nothing.
 - **`preferredNotifChannel: iterm2_with_bell`:** sends OSC 9 (with the text) and a bell. The bell also shows up in tmux's flags, from any window and any session.
+- **When Claude Code notifies:** six seconds after a permission prompt, an AskUserQuestion question or an MCP elicitation appears without a keystroke (`permission_prompt`, `elicitation_*`), and 60 seconds after a response ends without a keystroke (`idle_prompt`). The timing doesn't depend on terminal focus. The idle notification is what makes a session you have finished with light up after you switch away, since dmucode drops a notification only for the session being looked at.
+- **Hooks instead (`docs/claude-code-notify.sh`):** with `preferredNotifChannel: notifications_disabled` nothing is sent by Claude Code itself, and a hook's `terminalSequence` (OSC 0/1/2/9/99/777 and BEL are allowed) is written to the terminal by Claude Code, wrapped for tmux. The script answers `Notification` events with the message and `Stop` events with "Done in …" when the response took 30 seconds or more, measured from the last human-typed prompt in the transcript (`turnOrigin: human`; a background task's completion also arrives as a user message, with `turnOrigin: task_notification`). A `Stop` with `background_tasks` still running is skipped. Verified against Claude Code 2.1.304: the permission prompt, AskUserQuestion and the 30-second threshold mark the session, the idle notification no longer does.
 
 ## The palette
 
