@@ -16,7 +16,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 - **Live session sidebar.** dmucode keeps a tmux control-mode connection, so new, renamed and closed sessions show up immediately, without polling.
 - **Ghostty terminals.** Each session gets its own libghostty surface with your `~/.config/ghostty/config`: fonts, themes, background opacity and blur. Saving the config applies it right away.
 - **Windows as tabs.** Each tab shows the directory of the window's active pane and, inside a git repository, the branch and whether there are changes, conflicts or unpushed commits.
-- **Attention markers.** A session whose terminal rings the bell or sends a desktop notification (OSC 9/777) gets an orange bell and the notification's text, for example when Claude Code is waiting for input. The Dock icon shows how many sessions want attention.
+- **Attention markers.** A session whose terminal rings the bell or sends a desktop notification (OSC 9/777) gets an orange bell and the notification's text, for example when Claude Code needs permission. The Dock icon shows how many sessions want attention.
 - **⌘K palette.**
   - Fuzzy-find any session, window or pane. Panes are found by their title too, where Claude Code writes the topic of its conversation.
   - With [sesh](https://github.com/joshmedeski/sesh) installed, its configured sessions that aren't running are found too, and Return starts one: sesh creates the session in its directory and runs its startup command.
@@ -291,13 +291,35 @@ Since the session is named `Projects/dmucode`, it files itself under the group *
 
 ### Claude Code notifications
 
-To get the attention marker with Claude Code's message in every session and window, add this to `~/.claude/settings.json` on each machine:
+Claude Code's built-in notifications don't fit the sidebar well. When you have read an answer and switched to another session, Claude Code sends "Claude is waiting for your input" 60 seconds after the answer, so a session you are done with gets a marker. And by default (`auto`) it sends only OSC 777 through tmux passthrough, which reaches dmucode only from the session's current window.
+
+The way around is to turn the built-in notifications off and send your own from [hooks](https://code.claude.com/docs/en/hooks), which Claude Code writes to the terminal for you (`terminalSequence`). [docs/claude-code-notify.sh](docs/claude-code-notify.sh) is a hook that sends OSC 9 with a message and a bell:
+
+- on a permission prompt, an AskUserQuestion question or an MCP elicitation, after the six seconds Claude Code waits before notifying ("Claude needs your permission");
+- when a response that took 30 seconds or more ends ("Done in 1 min 12 s"). Shorter ones are quiet, and so is the end of a response that leaves a background task running: the response after the task ends counts, from the prompt you typed. The threshold is `MIN_SECONDS` at the top of the script.
+
+Copy it to `~/.claude/hooks/` and add this to `~/.claude/settings.json` (keep any hooks you have):
 
 ```json
-"preferredNotifChannel": "iterm2_with_bell"
+"preferredNotifChannel": "notifications_disabled",
+"hooks": {
+  "Notification": [
+    {
+      "matcher": "permission_prompt|elicitation_dialog|elicitation_url_dialog",
+      "hooks": [{ "type": "command", "command": "bash \"$HOME/.claude/hooks/dmucode-notify.sh\"", "timeout": 10 }]
+    }
+  ],
+  "Stop": [
+    {
+      "hooks": [{ "type": "command", "command": "bash \"$HOME/.claude/hooks/dmucode-notify.sh\"", "timeout": 10 }]
+    }
+  ]
+}
 ```
 
-Claude Code then sends its message (OSC 9) and a bell. By default (`auto`) it sends only OSC 777 through tmux passthrough, and tmux delivers that only from the session's current window, to clients that show it. The bell is also recorded by tmux, so it reaches dmucode from any window and any session. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#attention-markers) has the details.
+The marker shows the message under the session's name. dmucode decides whether you are away: nothing is marked for the session you are looking at, so a "Done" that arrives while you watch is dropped. The bell reaches dmucode from any window of the session through tmux; the message only from the current window. The script needs `jq`.
+
+`notifications_disabled` turns off Claude Code's own notifications in every terminal, not only in dmucode. The hook's OSC 9 shows as a desktop notification in terminals that support it (Ghostty, iTerm2, WezTerm), so little changes elsewhere. If you would rather keep the built-in notifications, `"preferredNotifChannel": "iterm2_with_bell"` makes them reach dmucode from any window, idle notification included. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#attention-markers) has the details.
 
 ### Environment variables
 
