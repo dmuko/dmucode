@@ -13,9 +13,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.5.0</string>
+	<string>0.6.0</string>
 	<key>CFBundleVersion</key>
-	<string>6</string>
+	<string>7</string>
 	<!-- dmucode://session/<name> and dmucode://new/<name>?dir=<path>; see
 	     AppURL.swift and the dmucode command in Resources/bin. -->
 	<key>CFBundleURLTypes</key>
