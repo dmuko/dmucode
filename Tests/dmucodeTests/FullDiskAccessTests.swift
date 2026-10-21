@@ -19,7 +19,8 @@ struct FullDiskAccessTests {
     }
 
     @Test func settingsURLOpensThePane() {
-        #expect(FullDiskAccess.settingsURL.scheme == "x-apple.systempreferences")
-        #expect(FullDiskAccess.settingsURL.query == "Privacy_AllFiles")
+        // Foundation versions differ on what the query of a host-less URL is.
+        #expect(FullDiskAccess.settingsURL.absoluteString
+            == "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
     }
 }
