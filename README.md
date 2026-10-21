@@ -16,7 +16,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 - **Live session sidebar.** dmucode keeps a tmux control-mode connection, so new, renamed and closed sessions show up immediately, without polling.
 - **Ghostty terminals.** Each session gets its own libghostty surface with your `~/.config/ghostty/config`: fonts, themes, background opacity and blur. Saving the config applies it right away.
 - **Windows as tabs.** Each tab shows the directory of the window's active pane and, inside a git repository, the branch and whether there are changes, conflicts or unpushed commits.
-- **Attention markers.** A session whose terminal rings the bell or sends a desktop notification (OSC 9/777) gets an orange bell and the notification's text, for example when Claude Code needs permission. The Dock icon shows how many sessions want attention.
+- **Attention markers.** A session whose terminal rings the bell or sends a desktop notification (OSC 9/777) gets an orange bell and the notification's text, for example when Claude Code needs permission. The Dock icon shows how many sessions want attention, and while dmucode is in the background the text is also a macOS notification.
 - **⌘K palette.**
   - Fuzzy-find any session, window or pane. Panes are found by their title too, where Claude Code writes the topic of its conversation.
   - With [sesh](https://github.com/joshmedeski/sesh) installed, its configured sessions that aren't running are found too, and Return starts one: sesh creates the session in its directory and runs its startup command.
@@ -140,6 +140,8 @@ A session that wants attention gets an orange bell in the sidebar. This happens 
 
 Showing the session clears the marker. Nothing is marked for the session you are looking at. The Dock icon shows the number of sessions that want attention.
 
+While dmucode is in the background, a notification with text is also shown as a macOS notification: the session's name and the text. Clicking it brings dmucode to the front with that session. Showing the session removes the notification. macOS asks for permission the first time the window comes to the front; if you declined, turn dmucode on in System Settings → Notifications. `desktop-notifications = false` in the config turns this off. A plain bell has no text and makes no notification.
+
 For Claude Code, see [Claude Code notifications](#claude-code-notifications).
 
 ### Keyboard shortcuts
@@ -189,6 +191,7 @@ sidebar-shortcuts = false
 | `tab-git-status` | `true`, `false` | `true` | The branch and status on the tabs. `false` also stops running git. |
 | `sidebar-window-count` | `true`, `false` | `true` | "3 windows" under each session's name. Notifications are shown there either way. |
 | `sidebar-shortcuts` | `true`, `false` | `true` | The ⌘1 … ⌘9 hints on the sidebar rows. |
+| `desktop-notifications` | `true`, `false` | `true` | A macOS notification for a program's notification (OSC 9/777) while dmucode is in the background. See [Attention markers](#attention-markers). |
 | `full-disk-access-prompt` | `true`, `false` | `true` | Ask for [Full Disk Access](#full-disk-access) at launch while dmucode doesn't have it. |
 
 Booleans accept `true`/`false`, `yes`/`no`, `on`/`off` and `1`/`0`. A repeated option takes its last value.

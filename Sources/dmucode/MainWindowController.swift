@@ -16,6 +16,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let palette: PaletteModel
     private let chrome = ChromeTheme(GhosttyRuntime.shared.theme)
     private let terminals: TerminalContainerController
+    private let notifier = DesktopNotifier()
     /// Opts the chrome's SwiftUI views out of the title bar's safe area
     /// (title-bar = false): a hosting view inside that area would otherwise
     /// inset its content by the title bar's height.
@@ -116,6 +117,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             // Nothing to point at if the user is looking at that session.
             if sessionID == self.store.selectedID, self.isWatching { return }
             self.store.raiseAlert(sessionID: sessionID, message: message)
+            // A notification's text also as a macOS notification while
+            // dmucode is in the background (a bell has no text).
+            if let message, !message.isEmpty, self.settings.config.desktopNotifications, !self.isWatching,
+               let session = self.store.sessions.first(where: { $0.id == sessionID }) {
+                self.notifier.post(sessionID: sessionID, title: self.store.layout.displayName(ofSession: session.name),
+                                   body: message)
+            }
+        }
+        notifier.onSelect = { [weak self] sessionID in
+            guard let self, self.store.sessions.contains(where: { $0.id == sessionID }) else { return }
+            self.store.selectedID = sessionID
+            NSApp.activate(ignoringOtherApps: true)
+            self.window?.makeKeyAndOrderFront(nil)
         }
         // Showing a session is seeing its alert.
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
@@ -367,6 +381,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         clearSelectedAlert()
+        if settings.config.desktopNotifications { notifier.requestAuthorizationIfNeeded() }
     }
 
     /// Pauses the git polling unless the window can be seen. The notifications
@@ -385,7 +400,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func clearSelectedAlert() {
         guard let id = store.selectedID, isWatching else { return }
         store.clearAlert(sessionID: id)
+        notifier.clear(sessionID: id)
     }
+
+    var notificationState: String { notifier.debugState }
 
     /// The number of sessions that want attention, on the Dock icon.
     private func updateDockBadge() {

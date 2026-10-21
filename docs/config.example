@@ -41,6 +41,14 @@
 # Full Disk Access… shows it any time.
 # full-disk-access-prompt = true
 
+# --- Notifications ---
+
+# A macOS notification when a program in a session sends a notification
+# (OSC 9 or OSC 777, e.g. Claude Code needing permission) while dmucode
+# isn't in front: the session's name and the text. Clicking it shows the
+# session. The sidebar's attention marker shows either way.
+# desktop-notifications = true
+
 # --- Keyboard shortcuts ---
 #
 #   keybind = <trigger>=<action>
