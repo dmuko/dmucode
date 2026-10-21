@@ -66,6 +66,7 @@ enum DebugHooks {
             }
             if let delegate = NSApp.delegate as? AppDelegate {
                 lines.append("keybinds=" + delegate.menuDebugState)
+                lines.append("settings=" + delegate.settingsDebugState)
             }
             lines.append("firstResponder=\(window.firstResponder.map { String(describing: type(of: $0)) } ?? "-")")
             if let editor = window.firstResponder as? NSTextView {

@@ -104,6 +104,53 @@ struct AppConfigTests {
         #expect(bindings[.nextSession] == nil)
     }
 
+    @Test func parsesTheChromeOptions() {
+        let config = AppConfig.parse("""
+        title-bar = false
+        tabs = Auto
+        tab-git-status = off
+        sidebar-window-count = no
+        sidebar-shortcuts = 0
+        """)
+        #expect(config.errors == [])
+        #expect(!config.titleBar)
+        #expect(config.tabs == .auto)
+        #expect(!config.tabGitStatus)
+        #expect(!config.sidebarWindowCount)
+        #expect(!config.sidebarShortcuts)
+        #expect(config.settingsDescription
+            == "title-bar=false,tabs=auto,tab-git-status=false,sidebar-window-count=false,sidebar-shortcuts=false")
+    }
+
+    @Test func chromeOptionsDefaultToOnAndTheLastValueWins() {
+        let defaults = AppConfig()
+        #expect(defaults.titleBar && defaults.tabGitStatus && defaults.sidebarWindowCount && defaults.sidebarShortcuts)
+        #expect(defaults.tabs == .always)
+        let config = AppConfig.parse("tabs = never\ntabs = always\ntitle-bar = false\ntitle-bar = true")
+        #expect(config.tabs == .always)
+        #expect(config.titleBar)
+    }
+
+    @Test func badChromeValuesAreReported() {
+        let config = AppConfig.parse("""
+        title-bar = maybe
+        tabs = sometimes
+        """)
+        #expect(config.titleBar)
+        #expect(config.tabs == .always)
+        #expect(config.errors == [
+            "line 1: title-bar must be true or false: maybe",
+            "line 2: tabs must be always, auto or never: sometimes",
+        ])
+    }
+
+    @Test func boolSpellings() {
+        for text in ["true", "True", "yes", "on", "1", "t", "y"] { #expect(AppConfig.parseBool(text) == true, "\(text)") }
+        for text in ["false", "FALSE", "no", "off", "0", "f", "n"] { #expect(AppConfig.parseBool(text) == false, "\(text)") }
+        #expect(AppConfig.parseBool("") == nil)
+        #expect(AppConfig.parseBool("enabled") == nil)
+    }
+
     @Test func noConfigIsTheDefaults() {
         #expect(AppConfig.load(path: "/nonexistent/dmucode/config") == AppConfig())
         #expect(AppConfig().keybindings == KeybindAction.defaults)

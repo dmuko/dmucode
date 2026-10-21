@@ -9,23 +9,30 @@ import SwiftUI
 /// hidden so switching is instant.
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     let store: SessionStore
+    let settings: AppSettings
     private let git = GitStatusStore()
     private let commandBar = CommandBarModel()
     private let switcher: SessionSwitcherModel
     private let palette: PaletteModel
     private let chrome = ChromeTheme(GhosttyRuntime.shared.theme)
     private let terminals: TerminalContainerController
+    /// Opts the chrome's SwiftUI views out of the title bar's safe area
+    /// (title-bar = false): a hosting view inside that area would otherwise
+    /// inset its content by the title bar's height.
+    private var setChromeSafeArea: ((_ respects: Bool) -> Void)?
     private var cancellables: Set<AnyCancellable> = []
 
-    init(store: SessionStore) {
+    init(store: SessionStore, settings: AppSettings) {
         self.store = store
+        self.settings = settings
         self.switcher = SessionSwitcherModel(store: store)
         self.palette = PaletteModel(sessions: switcher, command: commandBar)
         let theme = GhosttyRuntime.shared.theme
         let git = self.git, palette = self.palette, chrome = self.chrome
         // The real actions need self; set below.
         let tabBar = NSHostingView(rootView: Themed(chrome) { TabBarView(
-            store: store, git: git, theme: $0, onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }) })
+            store: store, git: git, settings: settings, theme: $0,
+            onSelect: { _ in }, onNew: {}, onRename: { _ in }, onClose: { _ in }) })
         let overlay = NSHostingView(rootView: Themed(chrome) {
             PaletteView(palette: palette, store: store, theme: $0) })
         self.terminals = TerminalContainerController(tmux: store.tmux, tabBar: tabBar, overlay: overlay)
@@ -48,6 +55,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         tabBar.rootView = Themed(chrome) { [weak self] theme in TabBarView(
             store: store,
             git: git,
+            settings: settings,
             theme: theme,
             onSelect: { self?.selectWindow($0) },
             onNew: { self?.newWindow() },
@@ -57,12 +65,19 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let split = NSSplitViewController()
         let sidebar = NSHostingController(rootView: Themed(chrome) { [weak self] theme in SidebarView(
             store: store,
+            settings: settings,
             theme: theme,
             onNew: { self?.newSession(nil) },
             onRename: { self?.rename($0) },
             onKill: { self?.kill($0) },
             onNewGroup: { self?.newGroup(moving: $0) },
             onRenameGroup: { self?.renameGroup($0) }) })
+        setChromeSafeArea = { [weak sidebar, weak tabBar, weak overlay] respects in
+            let regions: SafeAreaRegions = respects ? .all : []
+            sidebar?.safeAreaRegions = regions
+            tabBar?.safeAreaRegions = regions
+            overlay?.safeAreaRegions = regions
+        }
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 360
@@ -141,13 +156,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.showSelected() }
             .store(in: &cancellables)
-        // Git status for the directories of the selected session's tabs.
-        store.$sessions.combineLatest(store.$selectedID)
+        // Git status for the directories of the selected session's tabs;
+        // none at all with tab-git-status = false.
+        store.$sessions.combineLatest(store.$selectedID, settings.$config)
             .receive(on: RunLoop.main)
-            .sink { [weak self] sessions, selectedID in
-                let windows = sessions.first(where: { $0.id == selectedID })?.windows ?? []
+            .sink { [weak self] sessions, selectedID, config in
+                let windows = config.tabGitStatus ? sessions.first(where: { $0.id == selectedID })?.windows ?? [] : []
                 self?.git.track(Set(windows.map(\.path).filter { !$0.isEmpty }))
             }
+            .store(in: &cancellables)
+        // The tab bar: always, never, or only with several windows (tabs = auto).
+        store.$sessions.combineLatest(store.$selectedID, settings.$config)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] sessions, selectedID, config in
+                let count = sessions.first(where: { $0.id == selectedID })?.windows.count ?? 0
+                self?.terminals.tabBarVisible = config.tabs == .always || (config.tabs == .auto && count > 1)
+            }
+            .store(in: &cancellables)
+        settings.$config.map(\.titleBar)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.applyTitleBar() }
             .store(in: &cancellables)
         store.$sessions
             .receive(on: RunLoop.main)
@@ -173,6 +202,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
+        applyTitleBar()
         applyWindowBackground(chrome.theme)
         showConfigErrors(GhosttyRuntime.shared.configErrors, of: .ghostty)
     }
@@ -260,6 +290,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             + " effectViews=[\(effects.joined(separator: ","))]"
             + " appearance=\(window?.appearance?.name.rawValue ?? "-")"
             + " errors=\(GhosttyRuntime.shared.configErrors.count) sheet=\(window?.attachedSheet != nil)"
+            + " titleBar=\(window?.titleVisibility == .visible) tabBar=\(terminals.tabBarVisible)"
+            + " terminalTop=\(Int(terminals.view.bounds.height - terminals.terminalFrame.maxY))"
     }
 
     private static func effectViews(in view: NSView) -> [String] {
@@ -271,7 +303,42 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func windowDidEnterFullScreen(_ notification: Notification) { updateChrome() }
-    func windowDidExitFullScreen(_ notification: Notification) { updateChrome() }
+    func windowDidExitFullScreen(_ notification: Notification) {
+        updateChrome()
+        // Leaving fullscreen brings the title bar's views back.
+        applyTitleBar()
+    }
+
+    /// `title-bar = false`, done as Ghostty's `macos-titlebar-style = hidden`:
+    /// the window keeps `.titled` (its frame, shadow and resizing), while the
+    /// title, the traffic lights and the title bar's container are hidden.
+    /// The chrome then ignores the title bar's safe area (which AppKit keeps
+    /// reporting), so the sidebar and the tabs start at the top, and the
+    /// window is dragged by its chrome.
+    /// Not touched in native fullscreen, where there is no title bar anyway.
+    private func applyTitleBar() {
+        guard let window, !window.styleMask.contains(.fullScreen) else { return }
+        let visible = settings.config.titleBar
+        window.titleVisibility = visible ? .visible : .hidden
+        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            window.standardWindowButton(button)?.isHidden = !visible
+        }
+        if let frame = window.contentView?.superview,
+           let container = Self.descendant(of: frame, className: "NSTitlebarContainerView") {
+            container.isHidden = !visible
+        }
+        window.isMovableByWindowBackground = !visible
+        setChromeSafeArea?(visible)
+        terminals.ignoresTitleBar = !visible
+    }
+
+    private static func descendant(of view: NSView, className: String) -> NSView? {
+        for subview in view.subviews {
+            if subview.className == className { return subview }
+            if let found = descendant(of: subview, className: className) { return found }
+        }
+        return nil
+    }
 
     func windowDidBecomeKey(_ notification: Notification) {
         clearSelectedAlert()
@@ -539,6 +606,19 @@ final class TerminalContainerController: NSViewController {
     private let placeholder = NSTextField(labelWithString: "")
     private let reattachButton = NSButton(title: "Attach", target: nil, action: nil)
     private var shownID: String?
+    private var placeholderShown = false
+    private var overlayTop: NSLayoutConstraint?
+
+    /// The tab bar's visibility (config: tabs). Hidden, the terminal takes
+    /// its place.
+    var tabBarVisible = true {
+        didSet { if tabBarVisible != oldValue { updateTabBar() } }
+    }
+    /// With the title bar hidden (config: title-bar = false), the strip
+    /// under it goes and the tab bar moves to the top.
+    var ignoresTitleBar = false {
+        didSet { if ignoresTitleBar != oldValue { view.needsLayout = true } }
+    }
 
     var onTerminalClosed: (() -> Void)?
     var onReattach: (() -> Void)?
@@ -587,9 +667,11 @@ final class TerminalContainerController: NSViewController {
         overlay.isHidden = true
         overlay.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(overlay)
+        let overlayTop = overlay.topAnchor.constraint(equalTo: root.topAnchor)
+        self.overlayTop = overlayTop
         NSLayoutConstraint.activate([
             overlay.centerXAnchor.constraint(equalTo: root.centerXAnchor),
-            overlay.topAnchor.constraint(equalTo: root.safeAreaLayoutGuide.topAnchor, constant: TabBarView.height + 8),
+            overlayTop,
         ])
         view = root
     }
@@ -646,21 +728,32 @@ final class TerminalContainerController: NSViewController {
         view.window?.makeFirstResponder(terminal)
     }
 
+    /// The title bar's height, which the full-size content view extends
+    /// under; nothing when the title bar is hidden.
+    private var topInset: CGFloat { ignoresTitleBar ? 0 : view.safeAreaInsets.top }
+    private var tabBarHeight: CGFloat { tabBarVisible ? TabBarView.height : 0 }
+
     /// The window uses a full-size content view, so keep terminals out from
-    /// under the title bar and toolbar, and below the tab bar.
-    private var terminalFrame: NSRect {
+    /// under the title bar, and below the tab bar.
+    var terminalFrame: NSRect {
         var frame = view.bounds
-        frame.size.height -= view.safeAreaInsets.top + TabBarView.height
+        frame.size.height -= topInset + tabBarHeight
         return frame
     }
 
     override func viewDidLayout() {
         super.viewDidLayout()
         for terminal in views.values { terminal.frame = terminalFrame }
-        let top = view.safeAreaInsets.top
+        let top = topInset
         titleStrip.frame = NSRect(x: 0, y: view.bounds.height - top, width: view.bounds.width, height: top)
-        tabBar.frame = NSRect(x: 0, y: view.bounds.height - top - TabBarView.height,
+        tabBar.frame = NSRect(x: 0, y: view.bounds.height - top - tabBarHeight,
                               width: view.bounds.width, height: TabBarView.height)
+        overlayTop?.constant = top + tabBarHeight + 8
+    }
+
+    private func updateTabBar() {
+        tabBar.isHidden = !tabBarVisible || placeholderShown
+        view.needsLayout = true
     }
 
     /// Gives the keyboard back to the visible terminal, e.g. after a tab click.
@@ -712,7 +805,8 @@ final class TerminalContainerController: NSViewController {
     }
 
     private func showPlaceholder(_ text: String, reattach: Bool) {
-        tabBar.isHidden = true
+        placeholderShown = true
+        updateTabBar()
         placeholder.stringValue = text
         placeholder.isHidden = false
         reattachButton.isHidden = !reattach
@@ -720,7 +814,8 @@ final class TerminalContainerController: NSViewController {
     }
 
     private func hidePlaceholder() {
-        tabBar.isHidden = false
+        placeholderShown = false
+        updateTabBar()
         placeholder.isHidden = true
         reattachButton.isHidden = true
         updateBackground()

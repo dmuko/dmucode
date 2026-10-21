@@ -8,6 +8,7 @@ import SwiftUI
 struct TabBarView: View {
     @ObservedObject var store: SessionStore
     @ObservedObject var git: GitStatusStore
+    @ObservedObject var settings: AppSettings
     let theme: TerminalTheme
     var onSelect: (TmuxWindow) -> Void
     var onNew: () -> Void
@@ -21,7 +22,7 @@ struct TabBarView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
                     ForEach(store.selectedSession?.windows ?? []) { window in
-                        WindowTab(window: window, git: git.statuses[window.path], theme: theme,
+                        WindowTab(window: window, git: settings.config.tabGitStatus ? git.statuses[window.path] : nil, theme: theme,
                                   onSelect: { onSelect(window) })
                             .contextMenu {
                                 Button("Rename…") { onRename(window) }
