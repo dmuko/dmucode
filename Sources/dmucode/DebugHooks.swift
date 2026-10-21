@@ -12,6 +12,7 @@ import IOSurface
 ///   ctrl LETTER     synthesize ctrl+LETTER (e.g. tmux prefix: ctrl b)
 ///   key MODS+KEY    run the menu item with that shortcut (e.g. key cmd+right)
 ///   press KEY       synthesize up, down, escape, tab or backspace
+///   click X Y       click at X,Y points from the window's top-left corner
 ///   select N        select the Nth session in the sidebar
 ///   tab N           select the Nth window tab of the selected session
 ///   newtab          open a new window in the selected session (the + button)
@@ -55,12 +56,15 @@ enum DebugHooks {
             shortcut(arg, window: window)
         case "press":
             press(arg, window: window)
+        case "click":
+            let n = arg.split(separator: " ").compactMap { Double($0) }
+            if n.count == 2 { click(x: n[0], y: n[1], window: window) }
         case "select":
             if let n = Int(arg), store.sessions.indices.contains(n - 1) {
                 store.selectedID = store.sessions[n - 1].id
             }
         case "state":
-            var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque) restoring=\(store.isRestoring) error=\(store.errorMessage ?? "-")"]
+            var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque) restoring=\(store.isRestoring) error=\(store.errorMessage ?? "-") windowNumber=\(window.windowNumber) size=\(Int(window.frame.width))x\(Int(window.frame.height))"]
             if let controller = window.windowController as? MainWindowController {
                 lines.append(controller.paletteState)
                 lines.append(controller.themeState)
@@ -179,6 +183,20 @@ enum DebugHooks {
     }
 
     /// A key without text, sent to the first responder like a real press.
+    /// A click at (x, y) in points from the window's top-left corner, through
+    /// the window's own hit testing (so the title bar area counts).
+    private static func click(x: Double, y: Double, window: NSWindow) {
+        let point = NSPoint(x: x, y: window.frame.height - y)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            guard let event = NSEvent.mouseEvent(
+                with: type, location: point, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0) else { continue }
+            window.sendEvent(event)
+        }
+    }
+
     private static func press(_ name: String, window: NSWindow) {
         let keys: [String: (code: UInt16, char: String, flags: NSEvent.ModifierFlags)] = [
             "up": (126, String(UnicodeScalar(NSUpArrowFunctionKey)!), [.numericPad, .function]),

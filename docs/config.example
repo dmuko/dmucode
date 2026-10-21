@@ -9,9 +9,9 @@
 
 # --- Window chrome ---
 
-# The window's title bar and traffic lights. With `false` the sidebar and
-# the tabs start at the top of the window, which is dragged by its chrome;
-# ⌘M minimizes, ⌃⌘F goes full screen, ⌘Q quits.
+# The window's title bar. With `false` the traffic lights move into the top
+# of the sidebar, as in Finder, and the tabs start at the top of the
+# window, which is dragged by its chrome.
 # title-bar = true
 
 # When the selected session's tmux windows are shown as tabs:
