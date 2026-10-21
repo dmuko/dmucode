@@ -23,9 +23,16 @@ struct SidebarView: View {
                     ForEach(store.sidebarRows) { row in
                         switch row {
                         case .group(let name):
-                            GroupHeader(name: name)
+                            let collapsed = store.layout.isCollapsed(name)
+                            let members = collapsed ? store.layout.sessions(inGroup: name, of: store.sessions) : []
+                            GroupHeader(name: name, collapsed: collapsed, hidden: members.count,
+                                        holdsSelection: members.contains { $0.id == store.selectedID },
+                                        wantsAttention: members.contains { store.needsAttention($0) })
                                 .selectionDisabled()
+                                .onTapGesture { store.toggleGroupCollapsed(name) }
                                 .contextMenu {
+                                    Button(collapsed ? "Show Sessions" : "Hide Sessions") { store.toggleGroupCollapsed(name) }
+                                    Divider()
                                     Button("Rename Group…") { onRenameGroup(name) }
                                     Button("Remove Group") { store.removeGroup(name) }
                                 }
@@ -109,17 +116,45 @@ struct SidebarView: View {
     }
 }
 
+/// A group's header. A click hides its sessions, as a click on the "tmux"
+/// header hides them all; while hidden, the header counts them and shows a
+/// bell if one wants attention.
 private struct GroupHeader: View {
     let name: String
+    let collapsed: Bool
+    /// The hidden sessions (0 while expanded).
+    let hidden: Int
+    /// A hidden session is the selected one.
+    let holdsSelection: Bool
+    /// A hidden session has a bell or a notification.
+    let wantsAttention: Bool
 
     var body: some View {
-        Text(name)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .padding(.top, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+        HStack(spacing: 4) {
+            Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.tertiary)
+                .frame(width: 10)
+            Text(name)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(holdsSelection ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if wantsAttention {
+                Image(systemName: "bell.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.orange)
+            }
+            if collapsed {
+                Text("\(hidden)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .help(collapsed ? "Click to show the group's sessions" : "Click to hide the group's sessions")
     }
 }
 

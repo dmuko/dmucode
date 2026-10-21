@@ -63,6 +63,22 @@ struct SidebarLayoutStorageTests {
         #expect(loaded.layout.lastSeen["x"] == t0)
     }
 
+    @Test func collapsedIsAnOptionalKeyOfTheCurrentFormat() throws {
+        // Written only when a group is collapsed, so data from before stays
+        // byte for byte the same.
+        let plainData = try #require(sample().encoded())
+        let plain = try #require(JSONSerialization.jsonObject(with: plainData) as? [String: Any])
+        #expect(plain["collapsed"] == nil)
+        var layout = sample()
+        layout.setCollapsed("Agents", true)
+        let data = try #require(layout.encoded())
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(object["version"] as? Int == 2)
+        #expect(object["collapsed"] as? [String] == ["Agents"])
+        #expect(SidebarLayout.load(from: data).layout == layout)
+        #expect(!SidebarLayout.load(from: Data(legacyJSON.utf8)).layout.isCollapsed("Agents"))
+    }
+
     @Test func entriesKeepTheirVersionOneEncoding() throws {
         let data = try #require(sample().encoded())
         let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -138,9 +154,11 @@ struct SidebarLayoutStorageTests {
         var layout = sample()
         layout.addGroup("Later")
         layout.setGroup("Later", ofSession: "z")
+        layout.setCollapsed("Agents", true)
         layout.include(["z"], now: t0.addingTimeInterval(30 * day))
         let pruned = layout.pruned(now: t0.addingTimeInterval(31 * day))
         #expect(names(pruned) == ["#Later", "z"])
+        #expect(!pruned.isCollapsed("Agents"))
     }
 
     @Test func anEmptyGroupSurvivesPruning() {

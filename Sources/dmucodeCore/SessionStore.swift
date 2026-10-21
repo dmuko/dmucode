@@ -278,6 +278,12 @@ public final class SessionStore: ObservableObject {
         changeLayout { $0.setGroup(group, ofSession: session.name) }
     }
 
+    /// Hides a group's sessions in the sidebar, or shows them again. They
+    /// keep their places in `sessions` (⌘1…⌘9, ⌘↑/⌘↓).
+    public func toggleGroupCollapsed(_ name: String) {
+        changeLayout { $0.setCollapsed(name, !$0.isCollapsed(name)) }
+    }
+
     private func changeLayout(_ change: (inout SidebarLayout) -> Void) {
         var layout = self.layout
         change(&layout)

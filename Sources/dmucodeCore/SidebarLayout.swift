@@ -14,12 +14,16 @@ import Foundation
 /// "projects/x" joins an existing "Projects". Dragging it elsewhere
 /// afterwards is up to the user.
 ///
+/// A group can be collapsed: its sessions keep their places (and their
+/// ⌘1…⌘9 numbers) but aren't among the rows until it is expanded again.
+///
 /// Each name also remembers when a session list last contained it, and
 /// `pruned(now:)` forgets names unseen for 30 days. The stored JSON has a
 /// version (see `currentVersion`).
 public struct SidebarLayout: Codable, Equatable {
     /// The stored format. 1 is the original, unversioned one: only `entries`.
-    /// 2 adds `version` and `lastSeen`.
+    /// 2 adds `version` and `lastSeen`; `collapsed` came later (0.5.0) as an
+    /// optional key, which a build without it ignores.
     static let currentVersion = 2
 
     /// How long a name may go unseen before `pruned(now:)` forgets it.
@@ -57,6 +61,11 @@ public struct SidebarLayout: Codable, Equatable {
             case .session(let session): return .session(session.name)
             }
         }
+
+        fileprivate var isGroup: Bool {
+            if case .group = self { return true }
+            return false
+        }
     }
 
     private(set) var entries: [Entry] = []
@@ -65,11 +74,14 @@ public struct SidebarLayout: Codable, Equatable {
     /// stamp (from the version 1 format) is stamped by `pruned(now:)`.
     private(set) var lastSeen: [String: Date] = [:]
 
+    /// The groups whose sessions are hidden.
+    private(set) var collapsed: Set<String> = []
+
     public init() {}
 
     // MARK: Storage
 
-    private enum CodingKeys: String, CodingKey { case version, entries, lastSeen }
+    private enum CodingKeys: String, CodingKey { case version, entries, lastSeen, collapsed }
 
     /// The layout of any readable version. A newer version than this build
     /// knows throws `UnsupportedVersion`; `load(from:)` handles that.
@@ -79,6 +91,7 @@ public struct SidebarLayout: Codable, Equatable {
         guard version <= Self.currentVersion else { throw UnsupportedVersion(version: version) }
         entries = try container.decode([Entry].self, forKey: .entries)
         lastSeen = try container.decodeIfPresent([String: Date].self, forKey: .lastSeen) ?? [:]
+        collapsed = try container.decodeIfPresent(Set<String>.self, forKey: .collapsed) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -86,6 +99,7 @@ public struct SidebarLayout: Codable, Equatable {
         try container.encode(Self.currentVersion, forKey: .version)
         try container.encode(entries, forKey: .entries)
         try container.encode(lastSeen, forKey: .lastSeen)
+        if !collapsed.isEmpty { try container.encode(collapsed.sorted(), forKey: .collapsed) }
     }
 
     /// Stored by a newer dmucode than this one.
@@ -123,8 +137,18 @@ public struct SidebarLayout: Codable, Equatable {
 
     public var groups: [String] { entries.compactMap(\.groupName) }
 
-    /// Every group header, and the running sessions in their places.
+    /// Every group header, and the running sessions in their places, except
+    /// those of collapsed groups.
     public func rows(for sessions: [TmuxSession]) -> [Row] {
+        var hidden = false
+        return allRows(for: sessions).filter { row in
+            if case .group(let name) = row { hidden = collapsed.contains(name) }
+            return !hidden || row.isGroup
+        }
+    }
+
+    /// The rows with every group expanded.
+    private func allRows(for sessions: [TmuxSession]) -> [Row] {
         var layout = self
         layout.include(sessions.map(\.name))
         let byName = Dictionary(sessions.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
@@ -136,9 +160,10 @@ public struct SidebarLayout: Codable, Equatable {
         }
     }
 
-    /// The sessions in sidebar order (⌘1…⌘9, ⌘↑/⌘↓).
+    /// The sessions in sidebar order (⌘1…⌘9, ⌘↑/⌘↓), collapsed groups'
+    /// included.
     func sorted(_ sessions: [TmuxSession]) -> [TmuxSession] {
-        rows(for: sessions).compactMap { row in
+        allRows(for: sessions).compactMap { row in
             if case .session(let session) = row { return session }
             return nil
         }
@@ -216,6 +241,7 @@ public struct SidebarLayout: Codable, Equatable {
                     return false
                 }) {
                     layout.entries.removeSubrange(block)
+                    layout.collapsed.remove(group)
                 }
             }
             layout.entries.removeAll { entry in
@@ -298,6 +324,7 @@ public struct SidebarLayout: Codable, Equatable {
     mutating func renameGroup(_ old: String, to new: String) -> Bool {
         guard old != new, !groups.contains(new), let index = entries.firstIndex(of: .group(old)) else { return false }
         entries[index] = .group(new)
+        if collapsed.remove(old) != nil { collapsed.insert(new) }
         return true
     }
 
@@ -307,6 +334,23 @@ public struct SidebarLayout: Codable, Equatable {
         let sessions = entries[block].dropFirst()
         entries.removeSubrange(block)
         entries.insert(contentsOf: sessions, at: ungroupedEnd)
+        collapsed.remove(name)
+    }
+
+    /// Whether a group's sessions are hidden.
+    public func isCollapsed(_ group: String) -> Bool {
+        collapsed.contains(group)
+    }
+
+    /// Hides or shows a group's sessions. Unknown groups are ignored.
+    mutating func setCollapsed(_ group: String, _ hidden: Bool) {
+        guard groups.contains(group) else { return }
+        if hidden { collapsed.insert(group) } else { collapsed.remove(group) }
+    }
+
+    /// The running sessions in a group, hidden or not.
+    public func sessions(inGroup group: String, of sessions: [TmuxSession]) -> [TmuxSession] {
+        sessions.filter { self.group(ofSession: $0.name) == group }
     }
 
     /// Moves a session to the end of a group, or of the ungrouped ones (nil).

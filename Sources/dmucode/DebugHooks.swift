@@ -21,6 +21,7 @@ import IOSurface
 ///   move FROM TO    drag sidebar row FROM (0-based) to before row TO, as onMove does
 ///   group NAME      create a group; ungroup NAME removes it
 ///   togroup S G     move session S into group G ("-": out of its group)
+///   collapse NAME   hide group NAME's sessions, or show them again (as a click on its header)
 ///   cmdbar LINE     run tmux command LINE in the palette (state shows the result)
 ///   palette TEXT    type TEXT into the palette and press Return
 ///   new NAME        create a session (as the New Session button does)
@@ -64,7 +65,7 @@ enum DebugHooks {
                 store.selectedID = store.sessions[n - 1].id
             }
         case "state":
-            var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque) restoring=\(store.isRestoring) error=\(store.errorMessage ?? "-") windowNumber=\(window.windowNumber) size=\(Int(window.frame.width))x\(Int(window.frame.height))"]
+            var lines = ["live=\(store.isLive) selected=\(store.selectedID ?? "-") title=\(window.title) opaque=\(window.isOpaque) restoring=\(store.isRestoring) error=\(store.errorMessage ?? "-") key=\(window.isKeyWindow) active=\(NSApp.isActive) windowNumber=\(window.windowNumber) size=\(Int(window.frame.width))x\(Int(window.frame.height))"]
             if let controller = window.windowController as? MainWindowController {
                 lines.append(controller.paletteState)
                 lines.append(controller.themeState)
@@ -80,7 +81,7 @@ enum DebugHooks {
             }
             let rows = store.sidebarRows.map { row -> String in
                 switch row {
-                case .group(let name): return "#" + name
+                case .group(let name): return "#" + name + (store.layout.isCollapsed(name) ? "(collapsed)" : "")
                 case .session(let session):
                     let shown = store.layout.displayName(ofSession: session.name)
                     return session.name + (shown == session.name ? "" : "=" + shown)
@@ -130,6 +131,8 @@ enum DebugHooks {
             store.addGroup(arg)
         case "ungroup":
             store.removeGroup(arg)
+        case "collapse":
+            store.toggleGroupCollapsed(arg)
         case "togroup":
             let parts = arg.split(separator: " ", maxSplits: 1).map(String.init)
             if parts.count == 2, let session = store.sessions.first(where: { $0.name == parts[0] }) {
