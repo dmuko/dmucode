@@ -9,14 +9,34 @@ import Foundation
 /// prompt at all.
 public enum FullDiskAccess {
     /// Whether this process has Full Disk Access, found out by opening a
-    /// file that only Full Disk Access allows. The attempt also lists the
+    /// path that only Full Disk Access allows. The attempt also lists the
     /// app in System Settings' Full Disk Access pane, switched off, so the
     /// user can turn it on there without adding the app by hand.
     public static func isGranted(home: String = NSHomeDirectory()) -> Bool {
-        let fd = open(home + "/Library/Application Support/com.apple.TCC/TCC.db", O_RDONLY)
-        guard fd >= 0 else { return false }
-        close(fd)
-        return true
+        isGranted(probing: probePaths(home: home))
+    }
+
+    /// Paths only Full Disk Access opens. Not every Mac has every one (the
+    /// per-user TCC database is missing on macOS 27), so several are tried.
+    static func probePaths(home: String) -> [String] {
+        [home + "/Library/Application Support/com.apple.TCC/TCC.db",
+         "/Library/Application Support/com.apple.TCC/TCC.db",
+         home + "/Library/Safari"]
+    }
+
+    /// The first path that exists decides: opened means granted, refused
+    /// means not. A missing path says nothing, so the next one is tried;
+    /// when none exists, the access counts as missing.
+    static func isGranted(probing paths: [String]) -> Bool {
+        for path in paths {
+            let fd = open(path, O_RDONLY)
+            if fd >= 0 {
+                close(fd)
+                return true
+            }
+            if errno != ENOENT { return false }
+        }
+        return false
     }
 
     /// The Full Disk Access pane in System Settings.
