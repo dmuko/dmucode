@@ -40,6 +40,7 @@ struct SidebarView: View {
                             SessionRow(session: session, name: store.layout.displayName(ofSession: session.name),
                                        alert: store.alerts[session.id],
                                        working: store.isWorking(session),
+                                       title: settings.config.sidebarPaneTitle ? store.paneTitles[session.id] : nil,
                                        shortcut: settings.config.sidebarShortcuts ? shortcuts[session.id] : nil,
                                        showWindowCount: settings.config.sidebarWindowCount)
                                 .tag(session.id)
@@ -167,6 +168,8 @@ private struct SessionRow: View {
     /// Output in the last few seconds: shown as a spinner, unless the
     /// session wants attention.
     let working: Bool
+    /// A pane's title, e.g. Claude Code's topic (see `TmuxPane.sidebarTitles`).
+    let title: String?
     let shortcut: Int?
     let showWindowCount: Bool
 
@@ -201,6 +204,12 @@ private struct SessionRow: View {
                         .foregroundStyle(.orange)
                         .lineLimit(2)
                         .help(message)
+                } else if let title {
+                    Text(title)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(title)
                 } else if showWindowCount {
                     Text(session.windows.count == 1 ? "1 window" : "\(session.windows.count) windows")
                         .font(.caption)

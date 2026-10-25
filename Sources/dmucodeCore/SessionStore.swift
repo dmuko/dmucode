@@ -53,6 +53,9 @@ public final class SessionStore: ObservableObject {
     /// Sessions with terminal output in the last few seconds (from the
     /// activity subscription), for example an agent at work. See `isWorking`.
     @Published public private(set) var working: Set<String> = []
+    /// A pane title per session for the sidebar, e.g. the topic Claude Code
+    /// gives its conversation (see `TmuxPane.sidebarTitles`), by session id.
+    @Published public private(set) var paneTitles: [String: String] = [:]
 
     /// A tmux client moved to another session (prefix s, switch-client...):
     /// the client's tty and the new session id.
@@ -530,9 +533,39 @@ public final class SessionStore: ObservableObject {
             }
             return
         }
+        if name == "%subscription-changed", args.first == "titles" {
+            scheduleTitlesFetch()
+            return
+        }
         if Self.listEvents.contains(name) {
             scheduleRefresh()
         }
+    }
+
+    // MARK: Pane titles
+
+    /// The panes from the last fetch, to pick the titles again when the
+    /// sessions change (another current window, a session gone).
+    private var lastPanes: [TmuxPane] = []
+    private var titlesFetchScheduled = false
+
+    /// The titles subscription changed: list the panes, once per burst.
+    private func scheduleTitlesFetch() {
+        guard !titlesFetchScheduled else { return }
+        titlesFetchScheduled = true
+        scheduler.after(0.05) { [weak self] in
+            guard let self else { return }
+            self.titlesFetchScheduled = false
+            self.listPanes { [weak self] panes in
+                self?.lastPanes = panes
+                self?.updatePaneTitles()
+            }
+        }
+    }
+
+    private func updatePaneTitles() {
+        let titles = TmuxPane.sidebarTitles(of: lastPanes, in: sessions)
+        if titles != paneTitles { paneTitles = titles }
     }
 
     /// Coalesces bursts: killing a session sends several notifications.
@@ -581,6 +614,7 @@ public final class SessionStore: ObservableObject {
             let ids = Set(sessions.map(\.id))
             if alerts.keys.contains(where: { !ids.contains($0) }) { alerts = alerts.filter { ids.contains($0.key) } }
             if working.contains(where: { !ids.contains($0) }) { working = working.filter { ids.contains($0) } }
+            updatePaneTitles()
             recentIDs.removeAll { !ids.contains($0) }
             fixSelection()
         case .failure(let error):

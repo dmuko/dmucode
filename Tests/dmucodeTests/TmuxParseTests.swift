@@ -98,3 +98,53 @@ struct TmuxParseTests {
         #expect(pane(title: "", command: "").meaningfulCommand == nil)
     }
 }
+
+struct SidebarTitleTests {
+    private func pane(_ id: String, session: String = "$0", window: String = "@0", active: Bool = true,
+                      command: String = "fish", title: String) -> TmuxPane {
+        TmuxPane(id: id, sessionID: session, windowID: window, isActive: active, command: command,
+                 path: "/", title: title, hasDefaultTitle: false)
+    }
+
+    private func window(_ id: String, index: Int, active: Bool) -> TmuxWindow {
+        TmuxWindow(id: id, index: index, name: "w", isActive: active, path: "/")
+    }
+
+    @Test func aLeadingStatusSymbolIsCutOff() {
+        #expect(pane("%0", command: "claude", title: "✳ Sesh integration").sidebarTitle == "Sesh integration")
+        #expect(pane("%0", command: "claude", title: "⠐ Working on it").sidebarTitle == "Working on it")
+        #expect(pane("%0", command: "nvim", title: "nvim -c ':Neotree' ~/.config").sidebarTitle == "nvim -c ':Neotree' ~/.config")
+        // A word that starts with a non-ASCII letter stays.
+        #expect(pane("%0", command: "claude", title: "Ä ö").sidebarTitle == "Ä ö")
+        #expect(pane("%0", command: "claude", title: "✳ ").sidebarTitle == nil)
+        // Directories and the program's own name say nothing.
+        #expect(pane("%0", title: "~/src/dmucode").sidebarTitle == nil)
+        #expect(pane("%0", command: "htop", title: "htop").sidebarTitle == nil)
+    }
+
+    @Test func anAgentsTitleGoesFirstThenTheCurrentWindowsActivePane() {
+        let sessions = [
+            TmuxSession(id: "$0", name: "notes",
+                        windows: [window("@1", index: 1, active: true), window("@2", index: 2, active: false)],
+                        attachedClients: 0),
+            TmuxSession(id: "$1", name: "config",
+                        windows: [window("@3", index: 1, active: false), window("@4", index: 2, active: true)],
+                        attachedClients: 0),
+            TmuxSession(id: "$2", name: "shell", windows: [window("@5", index: 1, active: true)], attachedClients: 0),
+        ]
+        let panes = [
+            // notes: nvim is the active pane, Claude Code is in a split.
+            pane("%1", session: "$0", window: "@1", active: true, command: "nvim", title: "nvim  ~/D/Notes"),
+            pane("%2", session: "$0", window: "@1", active: false, command: "claude", title: "✳ Notes repo"),
+            pane("%3", session: "$0", window: "@2", active: true, title: "~/D/Notes"),
+            // config: no agent; the current window (@4) wins over the first.
+            pane("%4", session: "$1", window: "@3", active: true, command: "nvim", title: "nvim init.lua"),
+            pane("%5", session: "$1", window: "@4", active: false, command: "nvim", title: "nvim other.lua"),
+            pane("%6", session: "$1", window: "@4", active: true, command: "nvim", title: "nvim config"),
+            // shell: only a directory.
+            pane("%7", session: "$2", window: "@5", title: "~"),
+        ]
+        #expect(TmuxPane.sidebarTitles(of: panes, in: sessions) == ["$0": "Notes repo", "$1": "nvim config"])
+    }
+}
+

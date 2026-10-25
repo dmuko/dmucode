@@ -17,6 +17,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 - **Ghostty terminals.** Each session gets its own libghostty surface with your `~/.config/ghostty/config`: fonts, themes, background opacity and blur. Saving the config applies it right away.
 - **Windows as tabs.** Each tab shows the directory of the window's active pane and, inside a git repository, the branch and whether there are changes, conflicts or unpushed commits.
 - **Working indicator.** A session whose terminal is producing output, such as an agent at work, shows a spinner in the sidebar, so you can see which agents are busy, which are waiting for you, and which are idle.
+- **Agent topics.** Under each session's name, the sidebar shows the topic Claude Code gives its conversation, or another program's pane title, so you can tell the agents apart without opening them.
 - **Attention markers.** A session whose terminal rings the bell or sends a desktop notification (OSC 9/777) gets an orange bell and the notification's text, for example when Claude Code needs permission. The Dock icon shows how many sessions want attention, and while dmucode is in the background the text is also a macOS notification. `notify make test` sends one when a command finishes.
 - **A command line and URLs.** `dmucode show agents/claude-1` brings dmucode to the front with that session, `dmucode new` creates a session in the current directory and shows it, and `dmucode://session/<name>` does the same from Raycast, scripts or anything else that opens URLs.
 - **⌘K palette.**
@@ -83,7 +84,8 @@ open /Applications/dmucode.app
 
 ### Sidebar
 
-- **Row contents:** each row shows the session's name and its number of windows. A green dot means a terminal is attached to it: dmucode's own once you have opened the session, or one elsewhere. A gray dot means activity in a window, if you use `monitor-activity on` in tmux.
+- **Row contents:** each row shows the session's name and, under it, a pane's title or the number of windows. A green dot means a terminal is attached to it: dmucode's own once you have opened the session, or one elsewhere. A gray dot means activity in a window, if you use `monitor-activity on` in tmux.
+- **Pane titles:** a program can give its pane a title, and Claude Code puts the topic of its conversation there. The sidebar shows it under the session's name, in place of the window count, and updates it within a second or two when it changes. The title of an AI agent's pane (`claude`, `codex`, `gemini`, `opencode`, `aider`) goes first, then the current window's active pane, then the other panes. Directories, the host name (tmux's default title) and a program's bare name aren't shown, nor a leading status symbol such as Claude Code's ✳. A notification's text takes the place while there is one. `sidebar-pane-title = false` turns this off.
 - **Working indicator:** the terminal icon becomes a spinner while something in the session writes to its terminal, and goes back a few seconds after the output stops. An agent shows it while it works, including while it thinks, and loses it when it waits for you, which is when the bell appears. The selected session never shows it. Nothing needs to be configured in tmux.
 - **Live indicator:** the dot in the sidebar header is green while updates arrive live over control mode, and gray while dmucode polls because there is no session to connect to yet.
 - **Context menu:** right-click a session for **Rename…**, **Move to Group** and **Kill Session…**. Right-click a group header for **Hide Sessions** / **Show Sessions**, **Rename Group…** and **Remove Group**; removing a group keeps its sessions, ungrouped.
@@ -233,6 +235,7 @@ sidebar-shortcuts = false
 | `tabs` | `always`, `auto`, `never` | `always` | When the session's windows are shown as tabs; `auto` shows them once there is more than one window. ⌘T, ⌘← / ⌘→ and ⌥⌘1…9 work either way. |
 | `tab-git-status` | `true`, `false` | `true` | The branch and status on the tabs. `false` also stops running git. |
 | `sidebar-window-count` | `true`, `false` | `true` | "3 windows" under each session's name. Notifications are shown there either way. |
+| `sidebar-pane-title` | `true`, `false` | `true` | A pane's title under each session's name in place of the window count, e.g. Claude Code's topic (see [Sidebar](#sidebar)). |
 | `sidebar-shortcuts` | `true`, `false` | `true` | The ⌘1 … ⌘9 hints on the sidebar rows. |
 | `desktop-notifications` | `true`, `false` | `true` | A macOS notification for a program's notification (OSC 9/777) while dmucode is in the background. See [Attention markers](#attention-markers). |
 | `full-disk-access-prompt` | `true`, `false` | `true` | Ask for [Full Disk Access](#full-disk-access) at launch while dmucode doesn't have it. |
