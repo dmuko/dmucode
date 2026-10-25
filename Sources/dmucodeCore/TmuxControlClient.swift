@@ -81,6 +81,11 @@ final class TmuxControlClient {
         // marks the session as working from that. A comma in the W loop
         // would start the current window's own format, hence the space.
         send(["refresh-client", "-B", "activity::#{S:#{session_id}=#{W:#{window_activity} };}"])
+        // Pane titles change without a notification. This value only
+        // signals a change (the store then lists the panes); a leading
+        // non-ASCII symbol and its space are cut off, so a status symbol
+        // that a program animates in its title wouldn't fire it.
+        send(["refresh-client", "-B", "titles::#{S:#{W:#{P:#{pane_id}=#{s/^[^ -~]+ //:pane_title}|}}}"])
 
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "dmucode.tmux-control.heartbeat"))
         timer.schedule(deadline: .now() + Self.heartbeatInterval, repeating: Self.heartbeatInterval)

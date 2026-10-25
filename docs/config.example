@@ -28,6 +28,12 @@
 # text (e.g. Claude Code waiting for input) is shown there either way.
 # sidebar-window-count = true
 
+# A pane's title under each session's name, in place of the window count:
+# the topic Claude Code gives its conversation, or what another program
+# puts in its title. An agent's pane goes first, then the current window's
+# active pane. Directories and plain program names aren't shown.
+# sidebar-pane-title = true
+
 # The ⌘1 … ⌘9 hints on the sidebar rows.
 # sidebar-shortcuts = true
 

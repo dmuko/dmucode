@@ -6,6 +6,7 @@ import Foundation
 final class FakeTmux: TmuxBackend {
     var socketName: String? = "test"
     var sessions: [TmuxSession] = []
+    var panes: [TmuxPane] = []
     var listError: TmuxError?
     var hasResurrectSave = false
     var serverRunning = true
@@ -29,7 +30,7 @@ final class FakeTmux: TmuxBackend {
         return placeholder.id
     }
 
-    func listPanes() throws -> [TmuxPane] { [] }
+    func listPanes() throws -> [TmuxPane] { panes }
     func listCommands() throws -> [TmuxCommand] { [] }
     func selectWindow(sessionID: String, windowID: String) throws { calls.append("select-window \(sessionID) \(windowID)") }
     func selectPane(id: String) throws { calls.append("select-pane \(id)") }
@@ -97,8 +98,11 @@ final class FakeControl: TmuxControlConnection {
         let result: Result<[TmuxSession], TmuxError> = tmux.listError.map { .failure($0) } ?? .success(tmux.sessions)
         scheduler.main { completion(result) }
     }
+    private(set) var paneListCount = 0
     func listPanes(_ completion: @escaping (Result<[TmuxPane], TmuxError>) -> Void) {
-        scheduler.main { completion(.success([])) }
+        paneListCount += 1
+        let panes = tmux.panes
+        scheduler.main { completion(.success(panes)) }
     }
 
     func answerHeld(_ result: Result<[TmuxSession], TmuxError>) {

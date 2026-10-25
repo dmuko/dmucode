@@ -18,6 +18,9 @@ public struct AppConfig: Equatable {
     public var tabGitStatus = true
     /// `sidebar-window-count`: "3 windows" under each session's name.
     public var sidebarWindowCount = true
+    /// `sidebar-pane-title`: a pane's title under each session's name, e.g.
+    /// Claude Code's topic, in place of the window count.
+    public var sidebarPaneTitle = true
     /// `sidebar-shortcuts`: the ⌘1…⌘9 hints on the sidebar rows.
     public var sidebarShortcuts = true
     /// `full-disk-access-prompt`: ask for Full Disk Access at launch while
@@ -41,7 +44,7 @@ public struct AppConfig: Equatable {
     /// The options other than `keybind` and their values, for the debug hook.
     public var settingsDescription: String {
         "title-bar=\(titleBar),tabs=\(tabs.rawValue),tab-git-status=\(tabGitStatus),"
-            + "sidebar-window-count=\(sidebarWindowCount),sidebar-shortcuts=\(sidebarShortcuts),"
+            + "sidebar-window-count=\(sidebarWindowCount),sidebar-pane-title=\(sidebarPaneTitle),sidebar-shortcuts=\(sidebarShortcuts),"
             + "full-disk-access-prompt=\(fullDiskAccessPrompt),desktop-notifications=\(desktopNotifications)"
     }
 
@@ -100,6 +103,7 @@ public struct AppConfig: Equatable {
                 }
             case "tab-git-status": bool { config.tabGitStatus = $0 }
             case "sidebar-window-count": bool { config.sidebarWindowCount = $0 }
+            case "sidebar-pane-title": bool { config.sidebarPaneTitle = $0 }
             case "sidebar-shortcuts": bool { config.sidebarShortcuts = $0 }
             case "full-disk-access-prompt": bool { config.fullDiskAccessPrompt = $0 }
             case "desktop-notifications": bool { config.desktopNotifications = $0 }

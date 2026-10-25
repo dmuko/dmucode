@@ -60,6 +60,40 @@ public struct TmuxPane: Equatable {
     public var meaningfulCommand: String? {
         Self.shells.contains(command) || command.isEmpty ? nil : command
     }
+
+    /// AI coding agents, by process name: their titles go first in the
+    /// sidebar, as an agent's topic says the most about a session.
+    static let agents: Set<String> = ["claude", "codex", "gemini", "opencode", "aider"]
+
+    /// The meaningful title without a leading status symbol and its space
+    /// (Claude Code's "✳ Topic"): the sidebar shows the state on its own.
+    public var sidebarTitle: String? {
+        guard let title = meaningfulTitle else { return nil }
+        guard let first = title.first, !first.isASCII, !first.isLetter, !first.isNumber,
+              title.dropFirst().first ?? " " == " " else { return title }
+        let rest = title.dropFirst().trimmingCharacters(in: .whitespaces)
+        return rest.isEmpty ? nil : rest
+    }
+
+    /// One title per session for the sidebar, by session id: of the panes
+    /// with a title, an agent's first, then the current window's (its
+    /// active pane first), then the other windows' in order.
+    public static func sidebarTitles(of panes: [TmuxPane], in sessions: [TmuxSession]) -> [String: String] {
+        let bySession = Dictionary(grouping: panes, by: \.sessionID)
+        var titles: [String: String] = [:]
+        for session in sessions {
+            let windowRank = Dictionary(session.windows.enumerated().map { ($1.id, $1.isActive ? -1 : $0) },
+                                        uniquingKeysWith: min)
+            let ranked = (bySession[session.id] ?? []).enumerated().compactMap { index, pane -> ((Int, Int, Int, Int), String)? in
+                guard let title = pane.sidebarTitle else { return nil }
+                let rank = (agents.contains(pane.command) ? 0 : 1, windowRank[pane.windowID] ?? .max,
+                            pane.isActive ? 0 : 1, index)
+                return (rank, title)
+            }
+            if let best = ranked.min(by: { $0.0 < $1.0 }) { titles[session.id] = best.1 }
+        }
+        return titles
+    }
 }
 
 /// A tmux command, offered as a completion in the command bar.

@@ -341,6 +341,51 @@ struct SessionStoreWorkingTests {
     }
 }
 
+struct SessionStorePaneTitleTests {
+    private func titlesChanged(_ h: StoreHarness) {
+        h.control!.notify("%subscription-changed", ["titles", "$a", "-", "-", "-", ":", "%0=x|"])
+        h.scheduler.run(for: 0.1)
+    }
+
+    private func claude(_ session: String, _ title: String) -> TmuxPane {
+        TmuxPane(id: "%" + session, sessionID: "$" + session, windowID: "@" + session, isActive: true,
+                 command: "claude", path: "/", title: title, hasDefaultTitle: false)
+    }
+
+    @Test func theTitlesSubscriptionListsThePanesWithoutRelistingSessions() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a"), session("b")]
+        h.start()
+        let lists = h.control!.listCount
+        h.tmux.panes = [claude("a", "✳ Fix the bug")]
+
+        titlesChanged(h)
+        #expect(h.store.paneTitles == ["$a": "Fix the bug"])
+        #expect(h.control!.paneListCount == 1)
+        #expect(h.control!.listCount == lists)
+
+        // A burst is one listing.
+        h.tmux.panes = [claude("a", "✳ Fix the bug"), claude("b", "✳ Write docs")]
+        for _ in 0..<3 { h.control!.notify("%subscription-changed", ["titles", "$a", "-", "-", "-", ":", "y"]) }
+        h.scheduler.run(for: 0.1)
+        #expect(h.control!.paneListCount == 2)
+        #expect(h.store.paneTitles == ["$a": "Fix the bug", "$b": "Write docs"])
+    }
+
+    @Test func titlesOfVanishedSessionsGoWithTheNextListing() {
+        let h = StoreHarness()
+        h.tmux.sessions = [session("a"), session("b")]
+        h.start()
+        h.tmux.panes = [claude("a", "one"), claude("b", "two")]
+        titlesChanged(h)
+        #expect(h.store.paneTitles.count == 2)
+
+        h.tmux.sessions = [session("a")]
+        h.refresh()
+        #expect(h.store.paneTitles == ["$a": "one"])
+    }
+}
+
 struct SessionStoreURLTests {
     @Test func selectsASessionByName() {
         let h = StoreHarness()
