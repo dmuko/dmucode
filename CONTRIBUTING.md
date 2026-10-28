@@ -6,7 +6,7 @@ Thanks for helping. This page covers what you need for a pull request; [docs/ARC
 
 ```bash
 swift test                     # unit tests; needs no GhosttyKit
-./scripts/build-ghosttykit.sh  # once, ~5 min: libghostty (needs Zig 0.16.x, `brew install zig@0.16`)
+./scripts/build-ghosttykit.sh  # once, ~5 min: libghostty (needs Zig 0.17.x, `brew install zig@0.17`)
 ./scripts/build-app.sh         # → build/dmucode.app
 ```
 

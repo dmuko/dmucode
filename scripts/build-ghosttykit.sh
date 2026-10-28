@@ -2,8 +2,8 @@
 # Builds GhosttyKit.xcframework (and Ghostty's resources) from the
 # vendor/ghostty submodule.
 #
-# Ghostty requires an exact Zig minor version (0.16.x as of Oct 2026). The
-# Homebrew keg `zig@0.16` is used when installed; set ZIG=/path/to/zig to
+# Ghostty requires an exact Zig minor version (0.17.x as of Oct 2026). The
+# Homebrew keg `zig@0.17` is used when installed; set ZIG=/path/to/zig to
 # override.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -14,7 +14,7 @@ fi
 
 zig="${ZIG:-}"
 if [ -z "$zig" ]; then
-  for candidate in /opt/homebrew/opt/zig@0.16/bin/zig /usr/local/opt/zig@0.16/bin/zig zig; do
+  for candidate in /opt/homebrew/opt/zig@0.17/bin/zig /usr/local/opt/zig@0.17/bin/zig zig; do
     if command -v "$candidate" >/dev/null 2>&1; then
       zig="$candidate"
       break
@@ -22,17 +22,17 @@ if [ -z "$zig" ]; then
   done
 fi
 if [ -z "$zig" ]; then
-  echo "error: zig not found. Install Zig 0.16.x with 'brew install zig@0.16', or set ZIG=/path/to/zig." >&2
+  echo "error: zig not found. Install Zig 0.17.x with 'brew install zig@0.17', or set ZIG=/path/to/zig." >&2
   exit 1
 fi
 zig_version="$("$zig" version)"
 echo "Using $zig ($zig_version)"
 
 case "$zig_version" in
-  0.16*) ;;
+  0.17*) ;;
   *)
-    echo "error: $zig is Zig $zig_version, but Ghostty needs Zig 0.16.x." >&2
-    echo "Install it with 'brew install zig@0.16', or set ZIG=/path/to/zig." >&2
+    echo "error: $zig is Zig $zig_version, but Ghostty needs Zig 0.17.x." >&2
+    echo "Install it with 'brew install zig@0.17', or set ZIG=/path/to/zig." >&2
     exit 1
     ;;
 esac
