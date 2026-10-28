@@ -36,7 +36,7 @@ Sessions belong to tmux, not to the app. Quitting dmucode only detaches its clie
 
 - An Apple silicon Mac with macOS 14 or later.
 - [tmux](https://github.com/tmux/tmux) 3.2 or later, which has the control-mode features dmucode relies on (format subscriptions with `refresh-client -B`, client flags such as `no-output`). 3.6 or later is recommended. Only 3.8 is tested; nothing checks the versions in between. dmucode looks for `tmux` (and `git`, for the tabs' git status) in `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` (MacPorts), the Nix profiles (`~/.nix-profile/bin`, `/etc/profiles/per-user/$USER/bin`, `/run/current-system/sw/bin`, `/nix/var/nix/profiles/default/bin`) and `/usr/bin`, then in the `PATH` it was started with. If it finds no tmux there, it asks your login shell (`$SHELL -l -c 'command -v tmux'`). Set `DMUCODE_TMUX` to use another one.
-- To build from source: Xcode 16 or later (Swift 6), and [Zig](https://ziglang.org) **0.16.x** for libghostty. Ghostty needs this exact minor version, so Homebrew's current `zig` won't do; install `zig@0.16`.
+- To build from source: Xcode 16 or later (Swift 6), and [Zig](https://ziglang.org) **0.17.x** for libghostty. Ghostty needs this exact minor version; install `zig@0.17`, which pins it even after Homebrew's `zig` moves on.
 
 ## Installation
 
@@ -53,7 +53,7 @@ This installs tmux too. `brew upgrade --cask dmucode` updates the app; your sess
 Building libghostty takes about five minutes the first time.
 
 ```bash
-brew install tmux zig@0.16
+brew install tmux zig@0.17
 
 git clone --recurse-submodules https://github.com/dmuko/dmucode.git
 cd dmucode
@@ -64,7 +64,7 @@ cp -R build/dmucode.app /Applications/
 open /Applications/dmucode.app
 ```
 
-`build-ghosttykit.sh` finds Homebrew's `zig@0.16` by itself; to use another Zig, set `ZIG=/path/to/zig`. The app is signed ad hoc, which is enough to run it on the machine that built it.
+`build-ghosttykit.sh` finds Homebrew's `zig@0.17` by itself; to use another Zig, set `ZIG=/path/to/zig`. The app is signed ad hoc, which is enough to run it on the machine that built it.
 
 **Updating a source build:**
 
